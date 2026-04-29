@@ -1,6 +1,8 @@
 export { useMaterialInspectionPage } from '@/features/document/view-model/useMaterialInspectionPage'
 export { useDailyReportPage } from '@/features/document/view-model/useDailyReportPage'
 export {
+  catDocumentApi,
+  ccstDocumentApi,
   materialInspectionRequestApi,
   projectDocumentCodeApi,
 } from '@/features/document/infra/project-document-code-api'
@@ -26,6 +28,7 @@ export type { DailyReportRepository } from '@/features/document/use-cases/daily-
 export type {
   DailyReportResponse,
   DocumentJobDocType,
+  DocumentJobResponse,
   ImageCategory,
   MaterialInspectionRequestResponse,
   MirCellReference,
@@ -40,9 +43,13 @@ export type {
 export { default as ManagerPageView } from '@/features/document/ui/ManagerPage.vue'
 export { default as DailyReportPageView } from '@/features/document/ui/DailyReportPage.vue'
 export { default as MaterialInspectionPageView } from '@/features/document/ui/MaterialInspectionPage.vue'
+export { default as CatDocumentPageView } from '@/features/document/ui/CatDocumentPage.vue'
+export { default as CcstDocumentPageView } from '@/features/document/ui/CcstDocumentPage.vue'
 
 export const documentRouteComponents = {
   ManagerPage: () => import('@/features/document/ui/ManagerPage.vue'),
   DailyReportPage: () => import('@/features/document/ui/DailyReportPage.vue'),
   MaterialInspectionPage: () => import('@/features/document/ui/MaterialInspectionPage.vue'),
+  CatDocumentPage: () => import('@/features/document/ui/CatDocumentPage.vue'),
+  CcstDocumentPage: () => import('@/features/document/ui/CcstDocumentPage.vue'),
 }

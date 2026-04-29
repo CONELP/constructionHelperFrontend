@@ -89,3 +89,101 @@ export interface DeliveryQuantityByDate {
 }
 
 export type MaterialOrderStatus = 'BEFORE_ORDER' | 'ORDER_COMPLETED' | 'RECEIPT_COMPLETED'
+
+export type CatPhotoType =
+  | 'SLUMP'
+  | 'AIR'
+  | 'TEMPERATURE'
+  | 'CHLORIDE'
+  | 'WATER'
+  | 'OVERVIEW'
+  | 'TEST_BOARD'
+
+export interface CatPhotoFile {
+  photoId: number
+  type: CatPhotoType
+  url: string
+  description: string | null
+}
+
+export interface CatLineData {
+  slump: number | null
+  air: number | null
+  temp: number | null
+  chloride: number | null
+  water: number | null
+}
+
+export interface CatLineResponse {
+  catLineId: number
+  materialDeliveryId: number
+  batch: number
+  slump: number | null
+  air: number | null
+  temp: number | null
+  chloride: number | null
+  water: number | null
+  photos: CatPhotoFile[]
+}
+
+export interface CatBatchResult {
+  batch: number
+  catLineId: number
+  photos: CatPhotoFile[]
+  lineData: CatLineData
+}
+
+export interface CreateCatResponse {
+  batches: CatBatchResult[]
+}
+
+export interface CreateCatBatchInput {
+  batch: number
+  images: File[]
+}
+
+export type CcstPhotoType = 'D7' | 'D7_BOARD' | 'D28' | 'D28_BOARD'
+
+export interface CcstPhotoFile {
+  photoId: number
+  type: CcstPhotoType
+  url: string
+  description: string | null
+}
+
+export interface CcstLineData {
+  comp1: number | null
+  comp2: number | null
+  comp3: number | null
+}
+
+export interface CcstLineResponse {
+  ccstLineId: number
+  materialDeliveryId: number
+  batch: number
+  setNo: number
+  ageDays: number
+  comp1: number | null
+  comp2: number | null
+  comp3: number | null
+  photos: CcstPhotoFile[]
+}
+
+export interface CcstBatchResultLine {
+  batch: number
+  setNo: number
+  ageDays: number
+  ccstLineId: number
+  photos: CcstPhotoFile[]
+  lineData: CcstLineData
+}
+
+export interface CreateCcstResponse {
+  lines: CcstBatchResultLine[]
+}
+
+export interface CreateCcstBatchInput {
+  batch: number
+  ageDays: 7 | 28
+  images: File[]
+}

@@ -2,6 +2,8 @@ import apiClient from '@/shared/network-core/apiClient'
 
 export type DocConfigDocType = 'MIR' | 'CAT' | 'CCST'
 export type UploadDocType = 'MIR' | 'CAT' | 'CCST' | 'DR'
+export type ExcelCellRefDocType = 'MIR' | 'DR'
+export type ScriptPromptDocType = 'CAT' | 'CCST'
 
 export interface DocConfigResponse {
   id: number
@@ -15,8 +17,8 @@ export interface DocConfigResponse {
   ccstDocNoPrompt: string | null
   drExcelCellRef: string | null
   mirExcelCellRef: string | null
-  catExcelCellRef: string | null
-  ccstExcelCellRef: string | null
+  catScriptPrompt: string | null
+  ccstScriptPrompt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -67,16 +69,16 @@ export const docConfigApi = {
 
   async generateExcelCellRef(
     projectId: string,
-    docType: UploadDocType,
+    docType: ExcelCellRefDocType,
   ): Promise<{
-    docType: UploadDocType
+    docType: ExcelCellRefDocType
     json: string
     iterations: number
     converged: boolean
     sampleUsed: boolean
   }> {
     const { data } = await apiClient.post<{
-      docType: UploadDocType
+      docType: ExcelCellRefDocType
       json: string
       iterations: number
       converged: boolean
@@ -91,10 +93,21 @@ export const docConfigApi = {
 
   async updateExcelCellRef(
     projectId: string,
-    body: { docType: UploadDocType; json: string },
+    body: { docType: ExcelCellRefDocType; json: string },
   ): Promise<DocConfigResponse> {
     const { data } = await apiClient.put<DocConfigResponse>(
       `/docConfig/updateExcelCellRef/${projectId}`,
+      body,
+    )
+    return data
+  },
+
+  async updateScriptPrompt(
+    projectId: string,
+    body: { docType: ScriptPromptDocType; prompt: string | null },
+  ): Promise<DocConfigResponse> {
+    const { data } = await apiClient.put<DocConfigResponse>(
+      `/docConfig/updateScriptPrompt/${projectId}`,
       body,
     )
     return data

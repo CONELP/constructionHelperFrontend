@@ -576,7 +576,6 @@ const loadWorkData = async (centerToday = false) => {
         data: {
           depId: dep.id,
           offset: 0,
-          isFollowing: dep.lagDays !== null,
           lagDays: dep.lagDays,
         },
       }
@@ -654,7 +653,6 @@ const applyMutation = (mutation: MutationResponse) => {
         data: {
           depId: dep.id,
           offset: 0,
-          isFollowing: dep.lagDays !== null,
           lagDays: dep.lagDays,
         },
       }
@@ -731,7 +729,7 @@ const {
 // 의존관계 연결 모드 상태
 const connectingFrom = ref<{
   workId: number
-  lagDays: number | null // null=후행작업추가, 0=따라가기추가
+  lagDays: number
 } | null>(null)
 
 // 연결 모드에서 노드 하이라이트
@@ -852,41 +850,6 @@ const onNodeClick = async (event: { node: Node; event: MouseEvent | TouchEvent }
 // 로컬 날짜를 YYYY-MM-DD 문자열로 변환
 const formatLocalDate = (date: Date): string => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-// 컨텍스트 메뉴에서 휴일 작업 토글
-const toggleHolidayFromContextMenu = async (work: WorkResponse) => {
-  const newValue = !work.isWorkingOnHoliday
-  try {
-    const mutation = await workApi.updateWork(work.workId, { isWorkingOnHoliday: newValue })
-    // 노드 갱신
-    const directWork = mutation.updatedWorks.find((w) => w.workId === work.workId)
-    if (directWork) {
-      const updated = styledWorkToNode(directWork)
-      const row = rowLayout.value.workRowMap.get(directWork.workId)
-      const y = row !== undefined ? row * ROW_UNIT + NODE_OFFSET_Y : NODE_OFFSET_Y
-      nodes.value = nodes.value.map((n) =>
-        n.id === `work-${directWork.workId}`
-          ? { ...updated, position: { ...updated.position, y } }
-          : n,
-      )
-    }
-    // cascade
-    const cascadeMutation = {
-      updatedWorks: mutation.updatedWorks.filter((w) => w.workId !== work.workId),
-      updatedWorkDeps: mutation.updatedWorkDeps,
-    }
-    if (cascadeMutation.updatedWorks.length > 0 || cascadeMutation.updatedWorkDeps.length > 0) {
-      applyMutation(cascadeMutation)
-    }
-    emit('works-loaded', nodes.value.map((n) => n.data.work as WorkResponse))
-    analyticsClient.trackAction('schedule_2d', 'update_work', 'success')
-  } catch (error: unknown) {
-    console.error('휴일 설정 변경 실패:', error)
-    analyticsClient.trackAction('schedule_2d', 'update_work', 'fail')
-    const err = error as { response?: { data?: { message?: string } }; message?: string }
-    alert(err.response?.data?.message || err.message)
-  }
 }
 
 // 컨텍스트 메뉴 상태
@@ -1138,8 +1101,7 @@ const edgeContextMenu = ref<{
   x: number
   y: number
   depId: number
-  lagDays: number | null
-  isFollowing: boolean
+  lagDays: number
 } | null>(null)
 
 const onEdgeContextMenu = (event: { edge: Edge; event: MouseEvent | TouchEvent }) => {
@@ -1147,27 +1109,17 @@ const onEdgeContextMenu = (event: { edge: Edge; event: MouseEvent | TouchEvent }
   const depId = event.edge.data?.depId as number | undefined
   if (!depId) return
   const e = event.event as MouseEvent
-  const lagDays = (event.edge.data?.lagDays as number | null) ?? null
-  const isFollowing = lagDays !== null
+  const lagDays = (event.edge.data?.lagDays as number | undefined) ?? 0
   edgeContextMenu.value = {
     x: e.clientX,
     y: e.clientY,
     depId,
-    lagDays: lagDays ?? 0,
-    isFollowing,
+    lagDays,
   }
 }
 
-const edgeMenuSetLagDays = async (lagDays: number | null) => {
-  if (!edgeContextMenu.value) return
-  const depId = edgeContextMenu.value.depId
-  edgeContextMenu.value = null
-  await updateLagDays(depId, lagDays)
-  loadWorkData()
-}
-
 const edgeMenuUpdateLocalLagDays = (delta: number) => {
-  if (!edgeContextMenu.value || edgeContextMenu.value.lagDays == null) return
+  if (!edgeContextMenu.value) return
   const newDays = edgeContextMenu.value.lagDays + delta
   edgeContextMenu.value.lagDays = newDays
   updateLagDaysLocal(edgeContextMenu.value.depId, newDays)
@@ -2058,14 +2010,6 @@ async function handleExcludeConfirm(excludedIds: number[]) {
             >
               후행작업 추가
             </button>
-            <button
-              v-if="contextMenu.work"
-              type="button"
-              class="w-full px-3 py-1.5 text-left text-sm hover:bg-muted transition-colors"
-              @click="toggleHolidayFromContextMenu(contextMenu.work!); contextMenu = null"
-            >
-              {{ contextMenu.work.isWorkingOnHoliday ? '휴일휴무로 변경' : '휴일작업으로 변경' }}
-            </button>
             <div class="my-1 border-t border-border" />
             <button
               type="button"
@@ -2089,56 +2033,35 @@ async function handleExcludeConfirm(excludedIds: number[]) {
             <div class="px-3 py-1 text-xs text-muted-foreground border-b border-border mb-1">
               ID: {{ edgeContextMenu.depId }}
             </div>
-            <!-- 따라가기로 변경 (현재 따라가기가 아닐 때) -->
-            <button
-              v-if="!edgeContextMenu.isFollowing"
-              type="button"
-              class="w-full px-3 py-1.5 text-left text-sm hover:bg-muted transition-colors"
-              @click="edgeMenuSetLagDays(0)"
-            >
-              따라가기로 변경
-            </button>
-
-            <!-- 따라가기 날짜 변경 (현재 따라가기일 때) -->
-            <template v-if="edgeContextMenu.isFollowing">
-              <div class="px-3 py-1.5 flex items-center gap-1.5">
-                <span class="text-sm text-muted-foreground shrink-0">따라가기</span>
-                <button
-                  type="button"
-                  class="flex items-center justify-center w-5 h-5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors"
-                  @click.stop="edgeMenuUpdateLocalLagDays(-1)"
-                >
-                  −
-                </button>
-                <span class="text-xs text-center select-none min-w-[24px]">{{ edgeContextMenu.lagDays }}일</span>
-                <button
-                  type="button"
-                  class="flex items-center justify-center w-5 h-5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors"
-                  @click.stop="edgeMenuUpdateLocalLagDays(1)"
-                >
-                  +
-                </button>
-                <span class="text-xs" :class="(edgeContextMenu.lagDays ?? 0) < 0 ? 'text-blue-500' : (edgeContextMenu.lagDays ?? 0) > 0 ? 'text-orange-500' : 'text-muted-foreground'">
-                  {{ (edgeContextMenu.lagDays ?? 0) < 0 ? `${Math.abs(edgeContextMenu.lagDays ?? 0)}일 겹치기` : edgeContextMenu.lagDays === 0 ? '다음날' : `${edgeContextMenu.lagDays ?? 0}일 벌리기` }}
-                </span>
-                <button
-                  type="button"
-                  class="ml-auto px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
-                  @click.stop="edgeMenuSaveLagDays()"
-                >
-                  저장
-                </button>
-              </div>
-
-              <!-- 따라가기 해제 -->
+            <!-- 따라가기 날짜 조정 -->
+            <div class="px-3 py-1.5 flex items-center gap-1.5">
+              <span class="text-sm text-muted-foreground shrink-0">따라가기</span>
               <button
                 type="button"
-                class="w-full px-3 py-1.5 text-left text-sm hover:bg-muted transition-colors"
-                @click="edgeMenuSetLagDays(null)"
+                class="flex items-center justify-center w-5 h-5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors"
+                @click.stop="edgeMenuUpdateLocalLagDays(-1)"
               >
-                따라가기 해제
+                −
               </button>
-            </template>
+              <span class="text-xs text-center select-none min-w-[24px]">{{ edgeContextMenu.lagDays }}일</span>
+              <button
+                type="button"
+                class="flex items-center justify-center w-5 h-5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors"
+                @click.stop="edgeMenuUpdateLocalLagDays(1)"
+              >
+                +
+              </button>
+              <span class="text-xs" :class="edgeContextMenu.lagDays < 0 ? 'text-blue-500' : edgeContextMenu.lagDays > 0 ? 'text-orange-500' : 'text-muted-foreground'">
+                {{ edgeContextMenu.lagDays < 0 ? `${Math.abs(edgeContextMenu.lagDays)}일 겹치기` : edgeContextMenu.lagDays === 0 ? '다음날' : `${edgeContextMenu.lagDays}일 벌리기` }}
+              </span>
+              <button
+                type="button"
+                class="ml-auto px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                @click.stop="edgeMenuSaveLagDays()"
+              >
+                저장
+              </button>
+            </div>
 
             <div class="my-1 border-t border-border" />
             <button

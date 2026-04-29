@@ -5,14 +5,14 @@ export interface WorkDepResponse {
   id: number
   sourceWorkId: number
   targetWorkId: number
-  lagDays: number | null
+  lagDays: number
   scheduleVersionId: number
 }
 
 export interface CreateWorkDepRequest {
   sourceWorkId: number
   targetWorkId: number
-  lagDays: number | null
+  lagDays: number
   scheduleVersionId: number
 }
 
@@ -29,7 +29,7 @@ export const workDepApi = {
     return data
   },
 
-  async updateWorkDep(workDepId: number, body: { lagDays: number | null }): Promise<MutationResponse> {
+  async updateWorkDep(workDepId: number, body: { lagDays: number }): Promise<MutationResponse> {
     const { data } = await apiClient.put<MutationResponse>(`/workDep/updateWorkDep/${workDepId}`, body)
     return data
   },

@@ -6,7 +6,7 @@ import {
   type WorkTypeResponse,
   type SubWorkTypeResponse,
 } from '@/shared/network-core/apis/reference'
-import { workApi, type MutationResponse } from '@/shared/network-core/apis/work'
+import { workApi, type MutationResponse, type UpdateWorkPayload } from '@/shared/network-core/apis/work'
 import { projectApi } from '@/shared/network-core/apis/project'
 import type { Project } from '@/shared/network-core/contracts/project'
 import { analyticsClient } from '@/shared/analytics/analyticsClient'
@@ -28,7 +28,6 @@ export function useWorkForm(onWorkCreated: (mutation: MutationResponse) => void,
     floor_ids: [] as number[],
     start_date: today,
     work_days: 7,
-    isWorkingOnHoliday: true,
     annotation: '',
   })
 
@@ -58,6 +57,7 @@ export function useWorkForm(onWorkCreated: (mutation: MutationResponse) => void,
   const isLoadingSubWorkTypes = ref(false)
 
   // 작업 생성 함수 (성공 시 true 반환)
+  // createWork 는 기본 필드만 받음. zone/floor/componentTypes 는 생성 후 updateWork 로 적용.
   const createWork = async (): Promise<boolean> => {
     const {
       start_date,
@@ -66,11 +66,10 @@ export function useWorkForm(onWorkCreated: (mutation: MutationResponse) => void,
       component_type_ids,
       zone_ids,
       floor_ids,
-      isWorkingOnHoliday,
       annotation,
+      is_structure,
     } = workFormState.value
 
-    // 필수 값 검증
     if (!start_date) {
       alert('시작일을 입력해주세요.')
       return false
@@ -78,21 +77,29 @@ export function useWorkForm(onWorkCreated: (mutation: MutationResponse) => void,
 
     isCreatingWork.value = true
     try {
-      const payload = {
+      const createPayload = {
         subWorkTypeId: Number(sub_work_type_id),
-        ...(component_type_ids.length > 0 && workFormState.value.is_structure != null && {
-          componentTypes: [{ isStructure: workFormState.value.is_structure, componentTypeIds: component_type_ids.map(Number) }],
-        }),
         startDate: start_date,
         workLeadTime: work_days,
-        isWorkingOnHoliday,
-        zoneIds: zone_ids,
-        floorIds: floor_ids,
         ...(annotation && { annotation }),
         scheduleVersionId: getScheduleVersion?.() ?? 0,
       }
 
-      const mutation = await workApi.createWork(payload)
+      let mutation = await workApi.createWork(createPayload)
+
+      const newWorkId = mutation.updatedWorks[0]?.workId
+      const updatePayload: UpdateWorkPayload = {}
+      if (zone_ids.length > 0) updatePayload.zoneIds = zone_ids
+      if (floor_ids.length > 0) updatePayload.floorIds = floor_ids
+      if (component_type_ids.length > 0 && is_structure != null) {
+        updatePayload.componentTypes = [
+          { isStructure: is_structure, componentTypeIds: component_type_ids.map(Number) },
+        ]
+      }
+      if (newWorkId != null && Object.keys(updatePayload).length > 0) {
+        mutation = await workApi.updateWork(newWorkId, updatePayload)
+      }
+
       onWorkCreated(mutation)
       analyticsClient.trackAction('schedule_2d', 'create_work', 'success')
       return true

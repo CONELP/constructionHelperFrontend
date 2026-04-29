@@ -1,5 +1,11 @@
 import apiClient from '@/shared/network-core/apiClient'
 import type {
+  CatLineResponse,
+  CcstLineResponse,
+  CreateCatBatchInput,
+  CreateCatResponse,
+  CreateCcstBatchInput,
+  CreateCcstResponse,
   CreateDeliveryResponse,
   DeliveryQuantityByDate,
   MaterialDeliveryDetail,
@@ -124,6 +130,76 @@ export const materialOrderApi = {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000,
       },
+    )
+  },
+
+  async createCat(
+    materialDeliveryId: number,
+    batches: CreateCatBatchInput[],
+  ): Promise<CreateCatResponse> {
+    const metadata = batches.map((b) => ({ batch: b.batch, count: b.images.length }))
+    const formData = new FormData()
+    formData.append('metadata', JSON.stringify(metadata))
+    batches.forEach((b) => b.images.forEach((file) => formData.append('images', file)))
+    const { data } = await apiClient.post<CreateCatResponse>(
+      `/materialDelivery/createCatLine/${materialDeliveryId}`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      },
+    )
+    return data
+  },
+
+  async getCatLineList(materialDeliveryId: number): Promise<CatLineResponse[]> {
+    const { data } = await apiClient.get<CatLineResponse[]>(
+      '/materialDelivery/getCatLineList',
+      { params: { materialDeliveryId } },
+    )
+    return data
+  },
+
+  async deleteCatLine(materialDeliveryId: number, catLineId: number): Promise<void> {
+    await apiClient.delete(
+      `/materialDelivery/deleteCatLine/${materialDeliveryId}/${catLineId}`,
+    )
+  },
+
+  async createCcstLine(
+    materialDeliveryId: number,
+    batches: CreateCcstBatchInput[],
+  ): Promise<CreateCcstResponse> {
+    const metadata = batches.map((b) => ({
+      batch: b.batch,
+      ageDays: b.ageDays,
+      count: b.images.length,
+    }))
+    const formData = new FormData()
+    formData.append('metadata', JSON.stringify(metadata))
+    batches.forEach((b) => b.images.forEach((file) => formData.append('images', file)))
+    const { data } = await apiClient.post<CreateCcstResponse>(
+      `/materialDelivery/createCcstLine/${materialDeliveryId}`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      },
+    )
+    return data
+  },
+
+  async getCcstLineList(materialDeliveryId: number): Promise<CcstLineResponse[]> {
+    const { data } = await apiClient.get<CcstLineResponse[]>(
+      '/materialDelivery/getCcstLineList',
+      { params: { materialDeliveryId } },
+    )
+    return data
+  },
+
+  async deleteCcstLine(materialDeliveryId: number, ccstLineId: number): Promise<void> {
+    await apiClient.delete(
+      `/materialDelivery/deleteCcstLine/${materialDeliveryId}/${ccstLineId}`,
     )
   },
 }

@@ -117,6 +117,16 @@ const router = createRouter({
           component: documentRouteComponents.MaterialInspectionPage,
         },
         {
+          path: 'document/concrete-acceptance-test',
+          name: 'document-concrete-acceptance-test',
+          component: documentRouteComponents.CatDocumentPage,
+        },
+        {
+          path: 'document/concrete-compression-test',
+          name: 'document-concrete-compression-test',
+          component: documentRouteComponents.CcstDocumentPage,
+        },
+        {
           path: 'functions',
           name: 'functions',
           redirect: '/helper/functions/cumulative-attendance',

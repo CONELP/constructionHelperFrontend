@@ -46,8 +46,12 @@ import { dateRangeToStrings, toCalendarDate } from '@/shared/utils/date-convert'
 import { useCalendarStore } from '@/app/context/stores/calendarStore'
 import ReferenceEditTrigger from '@/shared/helper-ui/ReferenceEditTrigger.vue'
 import MaterialDeliveryCreateDialog from '@/features/material/ui/components/MaterialDeliveryCreateDialog.vue'
+import MaterialDeliveryCatCreateDialog from '@/features/material/ui/components/MaterialDeliveryCatCreateDialog.vue'
+import MaterialDeliveryCcstCreateDialog from '@/features/material/ui/components/MaterialDeliveryCcstCreateDialog.vue'
 import { materialOrderApi } from '@/features/material/infra/material-order-api'
 import type {
+  CatLineResponse,
+  CcstLineResponse,
   DeliveryLineResponse,
   MaterialDeliveryDetail,
   MaterialDeliverySummary,
@@ -55,6 +59,8 @@ import type {
 } from '@/features/material/model/material-order-types'
 import { useMaterialOrder } from '@/features/material/view-model/useMaterialOrder'
 import {
+  catDocumentApi,
+  ccstDocumentApi,
   createMir,
   deleteDocument,
   getMaterialInspectionRequests,
@@ -185,6 +191,41 @@ const photoTypeText: Record<PhotoType, string> = {
   TAG: 'text-purple-600',
   DELIVERY_PHOTO: 'text-green-600',
 }
+
+const catCreateDialogOpen = ref(false)
+const catCreateTargetDeliveryId = ref<number | null>(null)
+const catLinesMap = ref<Record<number, CatLineResponse[]>>({})
+const isLoadingCatLines = ref<Record<number, boolean>>({})
+const catPhotoBlobUrls = ref<Record<string, string>>({})
+
+function catPhotoKey(deliveryId: number, photoId: number) {
+  return `${deliveryId}-${photoId}`
+}
+
+const showCatLineDeleteDialog = ref(false)
+const catLineDeleteTargetDeliveryId = ref<number | null>(null)
+const catLineDeleteTargetCatLineId = ref<number | null>(null)
+const catLineDeleteTargetBatch = ref<number | null>(null)
+const isDeletingCatLine = ref(false)
+
+const ccstCreateDialogOpen = ref(false)
+const ccstCreateTargetDeliveryId = ref<number | null>(null)
+const ccstLinesMap = ref<Record<number, CcstLineResponse[]>>({})
+const isLoadingCcstLines = ref<Record<number, boolean>>({})
+const ccstPhotoBlobUrls = ref<Record<string, string>>({})
+
+function ccstPhotoKey(deliveryId: number, photoId: number) {
+  return `${deliveryId}-${photoId}`
+}
+
+const showCcstLineDeleteDialog = ref(false)
+const ccstLineDeleteTargetDeliveryId = ref<number | null>(null)
+const ccstLineDeleteTargetCcstLineId = ref<number | null>(null)
+const ccstLineDeleteTargetLabel = ref<string>('')
+const isDeletingCcstLine = ref(false)
+
+const isGeneratingCatDoc = ref<Record<number, boolean>>({})
+const isGeneratingCcstDoc = ref<Record<number, boolean>>({})
 
 function currentPhotoType(deliveryId: number): PhotoType | null {
   const detail = deliveryDetailMap.value[deliveryId]
@@ -595,6 +636,234 @@ async function confirmDeleteMir() {
   }
 }
 
+async function loadCatLines(deliveryId: number) {
+  isLoadingCatLines.value[deliveryId] = true
+  try {
+    const lines = await materialOrderApi.getCatLineList(deliveryId)
+    const sorted = [...lines].sort((a, b) => a.batch - b.batch)
+    catLinesMap.value[deliveryId] = sorted
+
+    const allPhotos = sorted.flatMap((l) => l.photos)
+    if (allPhotos.length > 0) {
+      const settled = await Promise.allSettled(
+        allPhotos.map((p) => fileApi.objectUrlByKey(p.url)),
+      )
+      settled.forEach((r, i) => {
+        const photo = allPhotos[i]
+        if (r.status === 'fulfilled' && photo) {
+          catPhotoBlobUrls.value[catPhotoKey(deliveryId, photo.photoId)] = r.value
+        }
+      })
+    }
+  } catch (error: unknown) {
+    console.error('CAT 라인 로드 실패:', error)
+    catLinesMap.value[deliveryId] = []
+  } finally {
+    isLoadingCatLines.value[deliveryId] = false
+  }
+}
+
+function clearCatLines(deliveryId: number) {
+  const lines = catLinesMap.value[deliveryId] ?? []
+  lines.forEach((l) => {
+    l.photos.forEach((p) => {
+      const key = catPhotoKey(deliveryId, p.photoId)
+      const url = catPhotoBlobUrls.value[key]
+      if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+      delete catPhotoBlobUrls.value[key]
+    })
+  })
+  delete catLinesMap.value[deliveryId]
+  delete isLoadingCatLines.value[deliveryId]
+}
+
+function openCatCreateDialog(deliveryId: number) {
+  catCreateTargetDeliveryId.value = deliveryId
+  catCreateDialogOpen.value = true
+}
+
+async function onCatCreateSubmitted(deliveryId: number) {
+  if (expandedDeliveries[deliveryId]) {
+    clearCatLines(deliveryId)
+    await loadCatLines(deliveryId)
+  }
+}
+
+function openCatLineDeleteDialog(deliveryId: number, catLineId: number, batch: number) {
+  catLineDeleteTargetDeliveryId.value = deliveryId
+  catLineDeleteTargetCatLineId.value = catLineId
+  catLineDeleteTargetBatch.value = batch
+  showCatLineDeleteDialog.value = true
+}
+
+async function confirmDeleteCatLine() {
+  const deliveryId = catLineDeleteTargetDeliveryId.value
+  const catLineId = catLineDeleteTargetCatLineId.value
+  if (deliveryId == null || catLineId == null) return
+
+  isDeletingCatLine.value = true
+  try {
+    await materialOrderApi.deleteCatLine(deliveryId, catLineId)
+
+    const lines = catLinesMap.value[deliveryId] ?? []
+    const removed = lines.find((l) => l.catLineId === catLineId)
+    if (removed) {
+      removed.photos.forEach((p) => {
+        const key = catPhotoKey(deliveryId, p.photoId)
+        const url = catPhotoBlobUrls.value[key]
+        if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+        delete catPhotoBlobUrls.value[key]
+      })
+    }
+    catLinesMap.value[deliveryId] = lines.filter((l) => l.catLineId !== catLineId)
+
+    showCatLineDeleteDialog.value = false
+    analyticsClient.trackAction('material_delivery', 'delete_cat_line', 'success')
+  } catch (error: unknown) {
+    console.error('CAT 라인 삭제 실패:', error)
+    analyticsClient.trackAction('material_delivery', 'delete_cat_line', 'fail')
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    alert(err.response?.data?.message || err.message)
+  } finally {
+    isDeletingCatLine.value = false
+  }
+}
+
+async function loadCcstLines(deliveryId: number) {
+  isLoadingCcstLines.value[deliveryId] = true
+  try {
+    const lines = await materialOrderApi.getCcstLineList(deliveryId)
+    const sorted = [...lines].sort((a, b) => {
+      if (a.batch !== b.batch) return a.batch - b.batch
+      if (a.setNo !== b.setNo) return a.setNo - b.setNo
+      return a.ageDays - b.ageDays
+    })
+    ccstLinesMap.value[deliveryId] = sorted
+
+    const allPhotos = sorted.flatMap((l) => l.photos)
+    if (allPhotos.length > 0) {
+      const settled = await Promise.allSettled(
+        allPhotos.map((p) => fileApi.objectUrlByKey(p.url)),
+      )
+      settled.forEach((r, i) => {
+        const photo = allPhotos[i]
+        if (r.status === 'fulfilled' && photo) {
+          ccstPhotoBlobUrls.value[ccstPhotoKey(deliveryId, photo.photoId)] = r.value
+        }
+      })
+    }
+  } catch (error: unknown) {
+    console.error('CCST 라인 로드 실패:', error)
+    ccstLinesMap.value[deliveryId] = []
+  } finally {
+    isLoadingCcstLines.value[deliveryId] = false
+  }
+}
+
+function clearCcstLines(deliveryId: number) {
+  const lines = ccstLinesMap.value[deliveryId] ?? []
+  lines.forEach((l) => {
+    l.photos.forEach((p) => {
+      const key = ccstPhotoKey(deliveryId, p.photoId)
+      const url = ccstPhotoBlobUrls.value[key]
+      if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+      delete ccstPhotoBlobUrls.value[key]
+    })
+  })
+  delete ccstLinesMap.value[deliveryId]
+  delete isLoadingCcstLines.value[deliveryId]
+}
+
+function openCcstCreateDialog(deliveryId: number) {
+  ccstCreateTargetDeliveryId.value = deliveryId
+  ccstCreateDialogOpen.value = true
+}
+
+async function onCcstCreateSubmitted(deliveryId: number) {
+  if (expandedDeliveries[deliveryId]) {
+    clearCcstLines(deliveryId)
+    await loadCcstLines(deliveryId)
+  }
+}
+
+function openCcstLineDeleteDialog(
+  deliveryId: number,
+  ccstLineId: number,
+  batch: number,
+  setNo: number,
+  ageDays: number,
+) {
+  ccstLineDeleteTargetDeliveryId.value = deliveryId
+  ccstLineDeleteTargetCcstLineId.value = ccstLineId
+  ccstLineDeleteTargetLabel.value = `${batch}회차 ${setNo}세트 ${ageDays}일`
+  showCcstLineDeleteDialog.value = true
+}
+
+async function generateCatDocument(deliveryId: number) {
+  isGeneratingCatDoc.value[deliveryId] = true
+  try {
+    await catDocumentApi.createCatDocument(deliveryId)
+    analyticsClient.trackAction('material_delivery', 'create_cat_document', 'success')
+    router.push('/helper/document/concrete-acceptance-test')
+  } catch (error: unknown) {
+    console.error('CAT 문서 생성 실패:', error)
+    analyticsClient.trackAction('material_delivery', 'create_cat_document', 'fail')
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    alert(err.response?.data?.message || err.message)
+  } finally {
+    isGeneratingCatDoc.value[deliveryId] = false
+  }
+}
+
+async function generateCcstDocument(deliveryId: number) {
+  isGeneratingCcstDoc.value[deliveryId] = true
+  try {
+    await ccstDocumentApi.createCcstDocument(deliveryId)
+    analyticsClient.trackAction('material_delivery', 'create_ccst_document', 'success')
+    router.push('/helper/document/concrete-compression-test')
+  } catch (error: unknown) {
+    console.error('CCST 문서 생성 실패:', error)
+    analyticsClient.trackAction('material_delivery', 'create_ccst_document', 'fail')
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    alert(err.response?.data?.message || err.message)
+  } finally {
+    isGeneratingCcstDoc.value[deliveryId] = false
+  }
+}
+
+async function confirmDeleteCcstLine() {
+  const deliveryId = ccstLineDeleteTargetDeliveryId.value
+  const ccstLineId = ccstLineDeleteTargetCcstLineId.value
+  if (deliveryId == null || ccstLineId == null) return
+
+  isDeletingCcstLine.value = true
+  try {
+    await materialOrderApi.deleteCcstLine(deliveryId, ccstLineId)
+
+    const lines = ccstLinesMap.value[deliveryId] ?? []
+    const removed = lines.find((l) => l.ccstLineId === ccstLineId)
+    if (removed) {
+      removed.photos.forEach((p) => {
+        const key = ccstPhotoKey(deliveryId, p.photoId)
+        const url = ccstPhotoBlobUrls.value[key]
+        if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+        delete ccstPhotoBlobUrls.value[key]
+      })
+    }
+    ccstLinesMap.value[deliveryId] = lines.filter((l) => l.ccstLineId !== ccstLineId)
+
+    showCcstLineDeleteDialog.value = false
+    analyticsClient.trackAction('material_delivery', 'delete_ccst_line', 'success')
+  } catch (error: unknown) {
+    console.error('CCST 라인 삭제 실패:', error)
+    analyticsClient.trackAction('material_delivery', 'delete_ccst_line', 'fail')
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    alert(err.response?.data?.message || err.message)
+  } finally {
+    isDeletingCcstLine.value = false
+  }
+}
+
 async function generateMir(deliveryId: number) {
   isGeneratingMir.value[deliveryId] = true
   try {
@@ -635,6 +904,8 @@ async function toggleDelivery(delivery: MaterialDeliverySummary) {
     delete deliveryDragStart[id]
     delete deliveryTranslateStart[id]
     clearImageEditState(id)
+    clearCatLines(id)
+    clearCcstLines(id)
     return
   }
 
@@ -656,11 +927,15 @@ async function toggleDelivery(delivery: MaterialDeliverySummary) {
       delete deliveryDragStart[otherId]
       delete deliveryTranslateStart[otherId]
       clearImageEditState(otherId)
+      clearCatLines(otherId)
+      clearCcstLines(otherId)
     }
   }
 
   expandedDeliveries[id] = true
   isLoadingLines.value[id] = true
+  void loadCatLines(id)
+  void loadCcstLines(id)
 
   try {
     const detail = await materialOrderApi.getMaterialDeliveryDetail(id)
@@ -971,6 +1246,36 @@ onUnmounted(() => {
                   @click="generateMir(delivery.materialDeliveryId)"
                 >
                   {{ isGeneratingMir[delivery.materialDeliveryId] ? '생성 중...' : '검수요청서 생성' }}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  @click="openCatCreateDialog(delivery.materialDeliveryId)"
+                >
+                  콘크리트받아들이기시험 입력
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  :disabled="isGeneratingCatDoc[delivery.materialDeliveryId]"
+                  @click="generateCatDocument(delivery.materialDeliveryId)"
+                >
+                  {{ isGeneratingCatDoc[delivery.materialDeliveryId] ? '문서 생성 중...' : '콘크리트받아들이기시험 문서 생성' }}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  @click="openCcstCreateDialog(delivery.materialDeliveryId)"
+                >
+                  콘크리트압축강도시험 입력
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  :disabled="isGeneratingCcstDoc[delivery.materialDeliveryId]"
+                  @click="generateCcstDocument(delivery.materialDeliveryId)"
+                >
+                  {{ isGeneratingCcstDoc[delivery.materialDeliveryId] ? '문서 생성 중...' : '콘크리트압축강도시험 문서 생성' }}
                 </Button>
                 <template v-if="delivery.docId != null">
                   <Badge variant="secondary">검수요청 완료</Badge>
@@ -1293,6 +1598,192 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
+
+              <!-- CAT 회차 목록 -->
+              <div class="mt-6 pt-4 border-t border-border space-y-3">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-semibold">콘크리트받아들이기시험 회차</h3>
+                  <span
+                    v-if="catLinesMap[delivery.materialDeliveryId]?.length"
+                    class="text-xs text-muted-foreground"
+                  >
+                    (총 {{ catLinesMap[delivery.materialDeliveryId]?.length ?? 0 }}회차)
+                  </span>
+                </div>
+
+                <div
+                  v-if="isLoadingCatLines[delivery.materialDeliveryId]"
+                  class="text-sm text-muted-foreground"
+                >
+                  CAT 라인 로딩 중...
+                </div>
+
+                <div
+                  v-else-if="!catLinesMap[delivery.materialDeliveryId]?.length"
+                  class="text-sm text-muted-foreground"
+                >
+                  아직 등록된 CAT 회차가 없습니다.
+                </div>
+
+                <div v-else class="space-y-3">
+                  <div
+                    v-for="line in catLinesMap[delivery.materialDeliveryId]"
+                    :key="line.catLineId"
+                    class="border border-border rounded-md p-3 space-y-2"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span class="text-sm font-semibold">{{ line.batch }}회차</span>
+                      <span class="text-xs text-muted-foreground">#cat-{{ line.catLineId }}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        class="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        @click="openCatLineDeleteDialog(delivery.materialDeliveryId, line.catLineId, line.batch)"
+                      >
+                        <X class="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div class="grid grid-cols-5 gap-2 text-xs">
+                      <div>
+                        <div class="text-muted-foreground">슬럼프</div>
+                        <div>{{ line.slump ?? '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="text-muted-foreground">공기량</div>
+                        <div>{{ line.air ?? '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="text-muted-foreground">온도</div>
+                        <div>{{ line.temp ?? '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="text-muted-foreground">염화물</div>
+                        <div>{{ line.chloride ?? '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="text-muted-foreground">단위수량</div>
+                        <div>{{ line.water ?? '-' }}</div>
+                      </div>
+                    </div>
+
+                    <div v-if="line.photos.length > 0" class="flex flex-wrap gap-2">
+                      <div
+                        v-for="p in line.photos"
+                        :key="p.photoId"
+                        class="w-[100px] h-[100px] rounded border border-border overflow-hidden relative"
+                      >
+                        <img
+                          v-if="catPhotoBlobUrls[catPhotoKey(delivery.materialDeliveryId, p.photoId)]"
+                          :src="catPhotoBlobUrls[catPhotoKey(delivery.materialDeliveryId, p.photoId)]"
+                          class="w-full h-full object-cover"
+                        />
+                        <div
+                          v-else
+                          class="w-full h-full bg-muted/30 flex items-center justify-center text-[10px] text-muted-foreground"
+                        >
+                          로딩…
+                        </div>
+                        <span
+                          v-if="p.description"
+                          class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] py-0.5 text-center"
+                        >
+                          {{ p.description }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CCST 회차 목록 -->
+              <div class="mt-6 pt-4 border-t border-border space-y-3">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-semibold">콘크리트압축강도시험 회차</h3>
+                  <span
+                    v-if="ccstLinesMap[delivery.materialDeliveryId]?.length"
+                    class="text-xs text-muted-foreground"
+                  >
+                    (총 {{ ccstLinesMap[delivery.materialDeliveryId]?.length ?? 0 }}건)
+                  </span>
+                </div>
+
+                <div
+                  v-if="isLoadingCcstLines[delivery.materialDeliveryId]"
+                  class="text-sm text-muted-foreground"
+                >
+                  CCST 라인 로딩 중...
+                </div>
+
+                <div
+                  v-else-if="!ccstLinesMap[delivery.materialDeliveryId]?.length"
+                  class="text-sm text-muted-foreground"
+                >
+                  아직 등록된 CCST 회차가 없습니다.
+                </div>
+
+                <div v-else class="space-y-3">
+                  <div
+                    v-for="line in ccstLinesMap[delivery.materialDeliveryId]"
+                    :key="line.ccstLineId"
+                    class="border border-border rounded-md p-3 space-y-2"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span class="text-sm font-semibold">{{ line.batch }}회차 · {{ line.setNo }}세트 · {{ line.ageDays }}일</span>
+                      <span class="text-xs text-muted-foreground">#ccst-{{ line.ccstLineId }}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        class="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        @click="openCcstLineDeleteDialog(delivery.materialDeliveryId, line.ccstLineId, line.batch, line.setNo, line.ageDays)"
+                      >
+                        <X class="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <div class="text-muted-foreground">comp1 (MPa)</div>
+                        <div>{{ line.comp1 ?? '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="text-muted-foreground">comp2 (MPa)</div>
+                        <div>{{ line.comp2 ?? '-' }}</div>
+                      </div>
+                      <div>
+                        <div class="text-muted-foreground">comp3 (MPa)</div>
+                        <div>{{ line.comp3 ?? '-' }}</div>
+                      </div>
+                    </div>
+
+                    <div v-if="line.photos.length > 0" class="flex flex-wrap gap-2">
+                      <div
+                        v-for="p in line.photos"
+                        :key="p.photoId"
+                        class="w-[100px] h-[100px] rounded border border-border overflow-hidden relative"
+                      >
+                        <img
+                          v-if="ccstPhotoBlobUrls[ccstPhotoKey(delivery.materialDeliveryId, p.photoId)]"
+                          :src="ccstPhotoBlobUrls[ccstPhotoKey(delivery.materialDeliveryId, p.photoId)]"
+                          class="w-full h-full object-cover"
+                        />
+                        <div
+                          v-else
+                          class="w-full h-full bg-muted/30 flex items-center justify-center text-[10px] text-muted-foreground"
+                        >
+                          로딩…
+                        </div>
+                        <span
+                          v-if="p.description"
+                          class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] py-0.5 text-center"
+                        >
+                          {{ p.description }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </template>
           </div>
         </div>
@@ -1303,6 +1794,20 @@ onUnmounted(() => {
     <MaterialDeliveryCreateDialog
       v-model:open="createDeliveryDialogOpen"
       @submitted="onCreateDeliverySubmitted"
+    />
+
+    <!-- 콘크리트받아들이기시험 생성 다이얼로그 -->
+    <MaterialDeliveryCatCreateDialog
+      v-model:open="catCreateDialogOpen"
+      :material-delivery-id="catCreateTargetDeliveryId"
+      @submitted="(deliveryId) => onCatCreateSubmitted(deliveryId)"
+    />
+
+    <!-- 콘크리트압축강도시험 생성 다이얼로그 -->
+    <MaterialDeliveryCcstCreateDialog
+      v-model:open="ccstCreateDialogOpen"
+      :material-delivery-id="ccstCreateTargetDeliveryId"
+      @submitted="(deliveryId) => onCcstCreateSubmitted(deliveryId)"
     />
 
     <!-- 반입자재 삭제 확인 다이얼로그 -->
@@ -1336,6 +1841,42 @@ onUnmounted(() => {
           <AlertDialogCancel :disabled="isDeletingMir">취소</AlertDialogCancel>
           <AlertDialogAction :disabled="isDeletingMir" @click="confirmDeleteMir">
             {{ isDeletingMir ? '삭제 중...' : '삭제' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- CAT 라인 삭제 확인 다이얼로그 -->
+    <AlertDialog :open="showCatLineDeleteDialog" @update:open="showCatLineDeleteDialog = $event">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>CAT 회차 삭제 확인</AlertDialogTitle>
+          <AlertDialogDescription>
+            {{ catLineDeleteTargetBatch }}회차를 삭제하시겠습니까? 회차에 포함된 사진도 함께 삭제됩니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isDeletingCatLine">취소</AlertDialogCancel>
+          <AlertDialogAction :disabled="isDeletingCatLine" @click="confirmDeleteCatLine">
+            {{ isDeletingCatLine ? '삭제 중...' : '삭제' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- CCST 라인 삭제 확인 다이얼로그 -->
+    <AlertDialog :open="showCcstLineDeleteDialog" @update:open="showCcstLineDeleteDialog = $event">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>CCST 회차 삭제 확인</AlertDialogTitle>
+          <AlertDialogDescription>
+            {{ ccstLineDeleteTargetLabel }}을(를) 삭제하시겠습니까? 회차에 포함된 사진도 함께 삭제됩니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isDeletingCcstLine">취소</AlertDialogCancel>
+          <AlertDialogAction :disabled="isDeletingCcstLine" @click="confirmDeleteCcstLine">
+            {{ isDeletingCcstLine ? '삭제 중...' : '삭제' }}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

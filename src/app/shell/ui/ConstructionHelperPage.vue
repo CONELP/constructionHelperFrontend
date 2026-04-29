@@ -132,8 +132,8 @@ const documentMenus: DocumentMenuItem[] = [
         id: 'concrete', label: '콘크리트', children: [
           { id: 'factory-inspection', label: '공장검수' },
           { id: 'pouring-plan', label: '타설계획서' },
-          { id: 'concrete-acceptance-test', label: '콘크리트 받아들이기 시험' },
-          { id: 'concrete-compression-test', label: '콘크리트 압축강도 시험' },
+          { id: 'concrete-acceptance-test', label: '콘크리트 받아들이기 시험', path: '/helper/document/concrete-acceptance-test' },
+          { id: 'concrete-compression-test', label: '콘크리트 압축강도 시험', path: '/helper/document/concrete-compression-test' },
           { id: 'concrete-ledger', label: '콘크리트 관리대장' },
         ],
       },

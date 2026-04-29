@@ -26,7 +26,7 @@ import {
   type WorkTypeResponse,
   type SubWorkTypeResponse,
 } from '@/shared/network-core/apis/reference'
-import { workApi } from '@/shared/network-core/apis/work'
+import { workApi, type UpdateWorkPayload } from '@/shared/network-core/apis/work'
 import { scheduleVersionApi } from '@/shared/network-core/apis/scheduleVersion'
 
 const props = withDefaults(defineProps<{
@@ -178,19 +178,28 @@ async function handleSave() {
       versionId = mainVersion.id
     }
 
-    await workApi.createWork({
+    const createResp = await workApi.createWork({
       subWorkTypeId: Number(selectedSubWorkTypeId.value),
       startDate: startDate.value,
       workLeadTime: workLeadTime.value,
-      isWorkingOnHoliday: true,
       scheduleVersionId: versionId,
-      ...(selectedZoneIds.value.length > 0 && { zoneIds: selectedZoneIds.value }),
-      ...(selectedFloorIds.value.length > 0 && { floorIds: selectedFloorIds.value }),
-      ...(selectedComponentTypeIds.value.length > 0 && selectedIsStructure.value != null && {
-        componentTypes: [{ isStructure: selectedIsStructure.value, componentTypeIds: selectedComponentTypeIds.value }],
-      }),
       ...(annotation.value.trim() && { annotation: annotation.value.trim() }),
     })
+
+    const newWorkId = createResp.updatedWorks[0]?.workId
+    if (newWorkId != null) {
+      const updatePayload: UpdateWorkPayload = {}
+      if (selectedZoneIds.value.length > 0) updatePayload.zoneIds = selectedZoneIds.value
+      if (selectedFloorIds.value.length > 0) updatePayload.floorIds = selectedFloorIds.value
+      if (selectedComponentTypeIds.value.length > 0 && selectedIsStructure.value != null) {
+        updatePayload.componentTypes = [
+          { isStructure: selectedIsStructure.value, componentTypeIds: selectedComponentTypeIds.value },
+        ]
+      }
+      if (Object.keys(updatePayload).length > 0) {
+        await workApi.updateWork(newWorkId, updatePayload)
+      }
+    }
 
     emit('submitted')
     emit('update:open', false)

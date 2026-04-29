@@ -242,25 +242,33 @@ export function useWorkTooltipData(getScheduleVersion?: () => number) {
   }
 
   // 생성 모드 제출 → MutationResponse 반환
+  // createWork 는 기본 필드만 받음. zone/floor/componentTypes 는 생성 후 updateWork 로 적용.
   const submitCreate = async (): Promise<MutationResponse | null> => {
     isSavingDetails.value = true
     try {
-      const payload: CreateWorkPayload = {
+      const createPayload: CreateWorkPayload = {
         subWorkTypeId: Number(editSubWorkTypeId.value),
         startDate: createStartDate.value,
         workLeadTime: appConfig.work.defaultLeadTime,
-        isWorkingOnHoliday: true,
-        zoneIds: editZoneIds.value,
-        floorIds: editFloorIds.value,
         scheduleVersionId: getScheduleVersion?.() ?? 0,
       }
+      if (editAnnotation.value) createPayload.annotation = editAnnotation.value
 
+      let response = await workApi.createWork(createPayload)
+
+      const newWorkId = response.updatedWorks[0]?.workId
+      const updatePayload: UpdateWorkPayload = {}
+      if (editZoneIds.value.length > 0) updatePayload.zoneIds = editZoneIds.value
+      if (editFloorIds.value.length > 0) updatePayload.floorIds = editFloorIds.value
       if (editComponentTypeIds.value.length > 0 && selectedIsStructure.value != null) {
-        payload.componentTypes = [{ isStructure: selectedIsStructure.value, componentTypeIds: editComponentTypeIds.value }]
+        updatePayload.componentTypes = [
+          { isStructure: selectedIsStructure.value, componentTypeIds: editComponentTypeIds.value },
+        ]
       }
-      if (editAnnotation.value) payload.annotation = editAnnotation.value
+      if (newWorkId != null && Object.keys(updatePayload).length > 0) {
+        response = await workApi.updateWork(newWorkId, updatePayload)
+      }
 
-      const response = await workApi.createWork(payload)
       analyticsClient.trackAction('schedule_2d', 'create_work', 'success')
       closeDialog()
       return response

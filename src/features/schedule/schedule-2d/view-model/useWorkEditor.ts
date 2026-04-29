@@ -10,7 +10,7 @@ export function useWorkEditor(
   // 작업 선택 및 수정 상태
   const selectedWorkId = ref<number | null>(null)
   const isUpdatingWork = ref(false)
-  const workEditForm = ref({ startDate: '', workLeadTime: 1, isWorkingOnHoliday: true })
+  const workEditForm = ref({ startDate: '', workLeadTime: 1 })
 
   // 선택된 작업 데이터
   const selectedWork = computed(() => {
@@ -25,7 +25,6 @@ export function useWorkEditor(
       workEditForm.value = {
         startDate: work.startDate,
         workLeadTime: work.workLeadTime,
-        isWorkingOnHoliday: work.isWorkingOnHoliday
       }
     }
   })
@@ -40,7 +39,6 @@ export function useWorkEditor(
       const payload: UpdateWorkPayload = {}
       if (work && workEditForm.value.startDate !== work.startDate) payload.startDate = workEditForm.value.startDate
       if (work && workEditForm.value.workLeadTime !== work.workLeadTime) payload.workLeadTime = workEditForm.value.workLeadTime
-      if (work && workEditForm.value.isWorkingOnHoliday !== work.isWorkingOnHoliday) payload.isWorkingOnHoliday = workEditForm.value.isWorkingOnHoliday
       const mutation = await workApi.updateWork(selectedWorkId.value, payload)
       onWorkUpdated(mutation)
       analyticsClient.trackAction('schedule_2d', 'update_work', 'success')

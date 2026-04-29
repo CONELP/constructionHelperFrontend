@@ -9,7 +9,8 @@ import { useProjectStore } from '@/app/context/stores/project'
 import { useDocumentNumber } from '@/features/project-admin/document-number/view-model/useDocumentNumber'
 import type {
   DocConfigDocType,
-  UploadDocType,
+  ExcelCellRefDocType,
+  ScriptPromptDocType,
 } from '@/shared/network-core/apis/docConfig'
 
 const projectStore = useProjectStore()
@@ -20,14 +21,18 @@ const {
   isSaving,
   isSavingCellRef,
   isGeneratingCellRef,
+  isSavingScriptPrompt,
+  isUploadingTemplate,
   prompts,
   cellRefs,
-  mirTemplateUrl,
+  scriptPrompts,
+  templateUrls,
   load,
   save,
   saveCellRef,
   generateCellRef,
-  uploadMirTemplate,
+  saveScriptPrompt,
+  uploadTemplate,
 } = useDocumentNumber()
 
 const tabs = [
@@ -64,8 +69,21 @@ const cellRefPlaceholder = `{
   }
 }`
 
-const isUploadingTemplate = ref(false)
-const mirTemplateFileInput = ref<HTMLInputElement | null>(null)
+const scriptPromptPlaceholder = `예) 28일 강도 셀 좌표는 시트 2번의 J열에 누적되며, 사진은 한 페이지당 4장 배치한다.
+- 양식의 특수한 셀 위치, 페이지 분할, 머리글/꼬리말, 정렬 규칙 등 LLM 이 양식변경/내용입력 스크립트를 생성할 때 참고할 자유 텍스트 지침을 작성하세요.
+- 비워두면 LLM 은 기본 동작으로 생성합니다.`
+
+const templateFileInputs = ref<Record<DocConfigDocType, HTMLInputElement | null>>({
+  MIR: null,
+  CAT: null,
+  CCST: null,
+})
+
+function setTemplateFileInputRef(docType: DocConfigDocType) {
+  return (el: unknown) => {
+    templateFileInputs.value[docType] = el as HTMLInputElement | null
+  }
+}
 
 onMounted(() => {
   if (selectedProjectId.value) load(selectedProjectId.value)
@@ -83,7 +101,7 @@ function onSave(docType: DocConfigDocType) {
   save(selectedProjectId.value, docType)
 }
 
-function onGenerateCellRef(docType: UploadDocType) {
+function onGenerateCellRef(docType: ExcelCellRefDocType) {
   if (!selectedProjectId.value) {
     alert('프로젝트를 먼저 선택해주세요.')
     return
@@ -91,7 +109,7 @@ function onGenerateCellRef(docType: UploadDocType) {
   generateCellRef(selectedProjectId.value, docType)
 }
 
-function onSaveCellRef(docType: UploadDocType) {
+function onSaveCellRef(docType: ExcelCellRefDocType) {
   if (!selectedProjectId.value) {
     alert('프로젝트를 먼저 선택해주세요.')
     return
@@ -99,7 +117,15 @@ function onSaveCellRef(docType: UploadDocType) {
   saveCellRef(selectedProjectId.value, docType)
 }
 
-async function onMirTemplateFileChange(e: Event) {
+function onSaveScriptPrompt(docType: ScriptPromptDocType) {
+  if (!selectedProjectId.value) {
+    alert('프로젝트를 먼저 선택해주세요.')
+    return
+  }
+  saveScriptPrompt(selectedProjectId.value, docType)
+}
+
+async function onTemplateFileChange(docType: DocConfigDocType, e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -108,11 +134,9 @@ async function onMirTemplateFileChange(e: Event) {
     input.value = ''
     return
   }
-  isUploadingTemplate.value = true
   try {
-    await uploadMirTemplate(selectedProjectId.value, file)
+    await uploadTemplate(selectedProjectId.value, docType, file)
   } finally {
-    isUploadingTemplate.value = false
     input.value = ''
   }
 }
@@ -127,31 +151,113 @@ async function onMirTemplateFileChange(e: Event) {
       :tabs="tabs"
       default-tab="MIR"
     >
-      <template v-for="docType in (['MIR', 'CAT', 'CCST'] as const)" #[`tab-${docType}`] :key="docType">
+      <template #tab-MIR>
         <div v-if="isLoading" class="text-sm text-muted-foreground text-center py-8">
           설정 로딩 중...
         </div>
         <div v-else class="flex flex-col gap-6">
-          <div v-if="docType === 'MIR'" class="flex flex-col gap-2 rounded-md border border-border p-3">
+          <div class="flex flex-col gap-2 rounded-md border border-border p-3">
             <Label class="text-sm font-semibold">엑셀 템플릿</Label>
             <div class="flex items-center gap-3">
               <span class="text-sm text-muted-foreground">
-                {{ mirTemplateUrl ? '템플릿 등록됨' : '템플릿 없음' }}
+                {{ templateUrls.MIR ? '템플릿 등록됨' : '템플릿 없음' }}
               </span>
               <input
-                ref="mirTemplateFileInput"
+                :ref="setTemplateFileInputRef('MIR')"
                 type="file"
                 accept=".xlsx,.xls"
                 class="hidden"
-                @change="onMirTemplateFileChange"
+                @change="(e) => onTemplateFileChange('MIR', e)"
               />
               <Button
                 variant="outline"
                 size="sm"
-                :disabled="isUploadingTemplate"
-                @click="mirTemplateFileInput?.click()"
+                :disabled="isUploadingTemplate.MIR"
+                @click="templateFileInputs.MIR?.click()"
               >
-                {{ isUploadingTemplate ? '업로드 중...' : (mirTemplateUrl ? '템플릿 변경' : '템플릿 등록') }}
+                {{ isUploadingTemplate.MIR ? '업로드 중...' : (templateUrls.MIR ? '템플릿 변경' : '템플릿 등록') }}
+              </Button>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <Label>{{ docTypeLabels.MIR }} 문서번호 생성 규칙</Label>
+            <div class="text-xs text-muted-foreground space-y-1">
+              <p>· LLM 이 이 텍스트를 그대로 읽고 문서번호를 생성합니다.</p>
+              <p>· 포맷 예시, 치환 변수(<code>{yyyyMMdd}</code>, <code>{division}</code> 등), 금지 조건을 구체적으로 기재하세요.</p>
+            </div>
+            <textarea
+              v-model="prompts.MIR"
+              :placeholder="placeholder"
+              :disabled="isSaving.MIR"
+              rows="10"
+              class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+            />
+            <div class="flex justify-end">
+              <Button :disabled="isSaving.MIR" @click="onSave('MIR')">
+                {{ isSaving.MIR ? '저장 중...' : '문서번호 규칙 저장' }}
+              </Button>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <Label>{{ docTypeLabels.MIR }} 엑셀 셀 좌표 (JSON)</Label>
+            <div class="text-xs text-muted-foreground space-y-1">
+              <p>· 템플릿 시트의 셀 주소 매핑 JSON. photos 섹션은 sheet index 기준으로 types / cells / overflow 지정.</p>
+              <p>· <strong>자동 생성</strong>은 LLM이 템플릿을 분석해 재생성 후 즉시 DB에 저장합니다.</p>
+              <p>· 수동 편집 후에는 <strong>셀 좌표 저장</strong>으로 반영. 스키마 위반 시 서버가 400을 반환합니다.</p>
+            </div>
+            <textarea
+              v-model="cellRefs.MIR"
+              :placeholder="cellRefPlaceholder"
+              :disabled="isSavingCellRef.MIR || isGeneratingCellRef.MIR"
+              rows="18"
+              class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+            />
+            <div class="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                :disabled="isGeneratingCellRef.MIR || isSavingCellRef.MIR"
+                @click="onGenerateCellRef('MIR')"
+              >
+                {{ isGeneratingCellRef.MIR ? '생성 중...' : '자동 생성' }}
+              </Button>
+              <Button
+                :disabled="isSavingCellRef.MIR || isGeneratingCellRef.MIR"
+                @click="onSaveCellRef('MIR')"
+              >
+                {{ isSavingCellRef.MIR ? '저장 중...' : '셀 좌표 저장' }}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-for="docType in (['CAT', 'CCST'] as const)" #[`tab-${docType}`] :key="docType">
+        <div v-if="isLoading" class="text-sm text-muted-foreground text-center py-8">
+          설정 로딩 중...
+        </div>
+        <div v-else class="flex flex-col gap-6">
+          <div class="flex flex-col gap-2 rounded-md border border-border p-3">
+            <Label class="text-sm font-semibold">{{ docTypeLabels[docType] }} 엑셀 템플릿</Label>
+            <div class="flex items-center gap-3">
+              <span class="text-sm text-muted-foreground">
+                {{ templateUrls[docType] ? '템플릿 등록됨' : '템플릿 없음' }}
+              </span>
+              <input
+                :ref="setTemplateFileInputRef(docType)"
+                type="file"
+                accept=".xlsx,.xls"
+                class="hidden"
+                @change="(e) => onTemplateFileChange(docType, e)"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="isUploadingTemplate[docType]"
+                @click="templateFileInputs[docType]?.click()"
+              >
+                {{ isUploadingTemplate[docType] ? '업로드 중...' : (templateUrls[docType] ? '템플릿 변경' : '템플릿 등록') }}
               </Button>
             </div>
           </div>
@@ -160,7 +266,7 @@ async function onMirTemplateFileChange(e: Event) {
             <Label>{{ docTypeLabels[docType] }} 문서번호 생성 규칙</Label>
             <div class="text-xs text-muted-foreground space-y-1">
               <p>· LLM 이 이 텍스트를 그대로 읽고 문서번호를 생성합니다.</p>
-              <p>· 포맷 예시, 치환 변수(<code>{yyyyMMdd}</code>, <code>{division}</code> 등), 금지 조건을 구체적으로 기재하세요.</p>
+              <p>· 포맷 예시, 치환 변수, 금지 조건을 구체적으로 기재하세요.</p>
             </div>
             <textarea
               v-model="prompts[docType]"
@@ -177,32 +283,25 @@ async function onMirTemplateFileChange(e: Event) {
           </div>
 
           <div class="flex flex-col gap-2">
-            <Label>{{ docTypeLabels[docType] }} 엑셀 셀 좌표 (JSON)</Label>
+            <Label>{{ docTypeLabels[docType] }} 스크립트 프롬프트</Label>
             <div class="text-xs text-muted-foreground space-y-1">
-              <p>· 템플릿 시트의 셀 주소 매핑 JSON. photos 섹션은 sheet index 기준으로 types / cells / overflow 지정.</p>
-              <p>· <strong>자동 생성</strong>은 LLM이 템플릿을 분석해 재생성 후 즉시 DB에 저장합니다.</p>
-              <p>· 수동 편집 후에는 <strong>셀 좌표 저장</strong>으로 반영. 스키마 위반 시 서버가 400을 반환합니다.</p>
+              <p>· {{ docTypeLabels[docType] }} 문서 생성 시 양식변경 / 내용입력 LLM 호출에 매번 함께 전달되는 자유 텍스트 지침입니다.</p>
+              <p>· 양식의 특수 규칙(셀 누적 위치, 페이지 분할, 머리글/꼬리말 등)을 작성하세요.</p>
+              <p>· 비워두면 기본 동작으로 생성됩니다.</p>
             </div>
             <textarea
-              v-model="cellRefs[docType]"
-              :placeholder="cellRefPlaceholder"
-              :disabled="isSavingCellRef[docType] || isGeneratingCellRef[docType]"
-              rows="18"
-              class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+              v-model="scriptPrompts[docType]"
+              :placeholder="scriptPromptPlaceholder"
+              :disabled="isSavingScriptPrompt[docType]"
+              rows="14"
+              class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
             />
-            <div class="flex justify-end gap-2">
+            <div class="flex justify-end">
               <Button
-                variant="outline"
-                :disabled="isGeneratingCellRef[docType] || isSavingCellRef[docType]"
-                @click="onGenerateCellRef(docType)"
+                :disabled="isSavingScriptPrompt[docType]"
+                @click="onSaveScriptPrompt(docType)"
               >
-                {{ isGeneratingCellRef[docType] ? '생성 중...' : '자동 생성' }}
-              </Button>
-              <Button
-                :disabled="isSavingCellRef[docType] || isGeneratingCellRef[docType]"
-                @click="onSaveCellRef(docType)"
-              >
-                {{ isSavingCellRef[docType] ? '저장 중...' : '셀 좌표 저장' }}
+                {{ isSavingScriptPrompt[docType] ? '저장 중...' : '스크립트 프롬프트 저장' }}
               </Button>
             </div>
           </div>

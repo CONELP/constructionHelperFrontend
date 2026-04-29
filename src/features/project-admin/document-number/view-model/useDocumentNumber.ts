@@ -3,24 +3,45 @@ import {
   docConfigApi,
   type DocConfigDocType,
   type DocConfigResponse,
-  type UploadDocType,
+  type ExcelCellRefDocType,
+  type ScriptPromptDocType,
 } from '@/shared/network-core/apis/docConfig'
 import { analyticsClient } from '@/shared/analytics/analyticsClient'
 
 type Prompts = Record<DocConfigDocType, string>
-type CellRefs = Record<UploadDocType, string>
-type CellRefFlags = Record<UploadDocType, boolean>
+type CellRefs = Record<ExcelCellRefDocType, string>
+type CellRefFlags = Record<ExcelCellRefDocType, boolean>
+type ScriptPrompts = Record<ScriptPromptDocType, string>
+type ScriptPromptFlags = Record<ScriptPromptDocType, boolean>
+type TemplateUrls = Record<DocConfigDocType, string | null>
+type TemplateFlags = Record<DocConfigDocType, boolean>
 
 function emptyPrompts(): Prompts {
   return { MIR: '', CAT: '', CCST: '' }
 }
 
 function emptyCellRefs(): CellRefs {
-  return { MIR: '', CAT: '', CCST: '', DR: '' }
+  return { MIR: '', DR: '' }
 }
 
 function emptyCellRefFlags(): CellRefFlags {
-  return { MIR: false, CAT: false, CCST: false, DR: false }
+  return { MIR: false, DR: false }
+}
+
+function emptyScriptPrompts(): ScriptPrompts {
+  return { CAT: '', CCST: '' }
+}
+
+function emptyScriptPromptFlags(): ScriptPromptFlags {
+  return { CAT: false, CCST: false }
+}
+
+function emptyTemplateUrls(): TemplateUrls {
+  return { MIR: null, CAT: null, CCST: null }
+}
+
+function emptyTemplateFlags(): TemplateFlags {
+  return { MIR: false, CAT: false, CCST: false }
 }
 
 function prettify(json: string | null | undefined): string {
@@ -41,10 +62,13 @@ export function useDocumentNumber() {
   })
   const isSavingCellRef = ref<CellRefFlags>(emptyCellRefFlags())
   const isGeneratingCellRef = ref<CellRefFlags>(emptyCellRefFlags())
+  const isSavingScriptPrompt = ref<ScriptPromptFlags>(emptyScriptPromptFlags())
+  const isUploadingTemplate = ref<TemplateFlags>(emptyTemplateFlags())
   const exists = ref(false)
   const prompts = ref<Prompts>(emptyPrompts())
   const cellRefs = ref<CellRefs>(emptyCellRefs())
-  const mirTemplateUrl = ref<string | null>(null)
+  const scriptPrompts = ref<ScriptPrompts>(emptyScriptPrompts())
+  const templateUrls = ref<TemplateUrls>(emptyTemplateUrls())
 
   function applyResponse(res: DocConfigResponse) {
     prompts.value = {
@@ -54,11 +78,17 @@ export function useDocumentNumber() {
     }
     cellRefs.value = {
       MIR: prettify(res.mirExcelCellRef),
-      CAT: prettify(res.catExcelCellRef),
-      CCST: prettify(res.ccstExcelCellRef),
       DR: prettify(res.drExcelCellRef),
     }
-    mirTemplateUrl.value = res.mirTemplateUrl
+    scriptPrompts.value = {
+      CAT: res.catScriptPrompt ?? '',
+      CCST: res.ccstScriptPrompt ?? '',
+    }
+    templateUrls.value = {
+      MIR: res.mirTemplateUrl,
+      CAT: res.catTemplateUrl,
+      CCST: res.ccstTemplateUrl,
+    }
   }
 
   async function load(projectId: string) {
@@ -73,7 +103,8 @@ export function useDocumentNumber() {
         exists.value = false
         prompts.value = emptyPrompts()
         cellRefs.value = emptyCellRefs()
-        mirTemplateUrl.value = null
+        scriptPrompts.value = emptyScriptPrompts()
+        templateUrls.value = emptyTemplateUrls()
       } else {
         console.error('문서번호 설정 로드 실패:', error)
         alert(err.response?.data?.message || err.message)
@@ -111,7 +142,7 @@ export function useDocumentNumber() {
     }
   }
 
-  async function saveCellRef(projectId: string, docType: UploadDocType) {
+  async function saveCellRef(projectId: string, docType: ExcelCellRefDocType) {
     const raw = cellRefs.value[docType].trim()
     if (!raw) {
       alert('셀 좌표 JSON을 입력해주세요.')
@@ -144,7 +175,7 @@ export function useDocumentNumber() {
     }
   }
 
-  async function generateCellRef(projectId: string, docType: UploadDocType) {
+  async function generateCellRef(projectId: string, docType: ExcelCellRefDocType) {
     isGeneratingCellRef.value[docType] = true
     try {
       const res = await docConfigApi.generateExcelCellRef(projectId, docType)
@@ -165,18 +196,43 @@ export function useDocumentNumber() {
     }
   }
 
-  async function uploadMirTemplate(projectId: string, file: File) {
+  async function saveScriptPrompt(projectId: string, docType: ScriptPromptDocType) {
+    isSavingScriptPrompt.value[docType] = true
     try {
       await ensureExists(projectId)
-      const res = await docConfigApi.uploadTemplate(projectId, 'MIR', file)
-      mirTemplateUrl.value = res.mirTemplateUrl
-      analyticsClient.trackAction('admin_document_number', 'upload_mir_template', 'success')
+      const trimmed = scriptPrompts.value[docType].trim()
+      const res = await docConfigApi.updateScriptPrompt(projectId, {
+        docType,
+        prompt: trimmed.length > 0 ? trimmed : null,
+      })
+      applyResponse(res)
+      analyticsClient.trackAction('admin_document_number', `save_${docType.toLowerCase()}_script_prompt`, 'success')
+      alert('스크립트 프롬프트가 저장되었습니다.')
+    } catch (error: unknown) {
+      console.error('스크립트 프롬프트 저장 실패:', error)
+      analyticsClient.trackAction('admin_document_number', `save_${docType.toLowerCase()}_script_prompt`, 'fail')
+      const err = error as { response?: { data?: { message?: string } }; message?: string }
+      alert(err.response?.data?.message || err.message)
+    } finally {
+      isSavingScriptPrompt.value[docType] = false
+    }
+  }
+
+  async function uploadTemplate(projectId: string, docType: DocConfigDocType, file: File) {
+    isUploadingTemplate.value[docType] = true
+    try {
+      await ensureExists(projectId)
+      const res = await docConfigApi.uploadTemplate(projectId, docType, file)
+      applyResponse(res)
+      analyticsClient.trackAction('admin_document_number', `upload_${docType.toLowerCase()}_template`, 'success')
       alert('템플릿이 업로드되었습니다.')
     } catch (error: unknown) {
       console.error('템플릿 업로드 실패:', error)
-      analyticsClient.trackAction('admin_document_number', 'upload_mir_template', 'fail')
+      analyticsClient.trackAction('admin_document_number', `upload_${docType.toLowerCase()}_template`, 'fail')
       const err = error as { response?: { data?: { message?: string } }; message?: string }
       alert(err.response?.data?.message || err.message)
+    } finally {
+      isUploadingTemplate.value[docType] = false
     }
   }
 
@@ -185,14 +241,18 @@ export function useDocumentNumber() {
     isSaving,
     isSavingCellRef,
     isGeneratingCellRef,
+    isSavingScriptPrompt,
+    isUploadingTemplate,
     exists,
     prompts,
     cellRefs,
-    mirTemplateUrl,
+    scriptPrompts,
+    templateUrls,
     load,
     save,
     saveCellRef,
     generateCellRef,
-    uploadMirTemplate,
+    saveScriptPrompt,
+    uploadTemplate,
   }
 }

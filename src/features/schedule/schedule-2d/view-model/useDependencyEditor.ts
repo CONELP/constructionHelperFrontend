@@ -16,21 +16,19 @@ export function useDependencyEditor(
   const styledEdges = computed(() => {
     return edges.value.map(e => {
       const offset = e.data?.offset || 0
-      const isFollowing = e.data?.isFollowing !== false
       const edgeColor = DEP_COLOR
       return {
         ...e,
         style: {
           stroke: edgeColor,
-          strokeDasharray: isFollowing ? undefined : '12 8',
           transform: `translate(${offset}px, ${offset}px)`,
         },
       }
     })
   })
 
-  // 의존관계 생성 — 후행작업추가(lagDays=null) 또는 따라가기추가(lagDays=0)
-  const createDep = async (sourceWorkId: number, targetWorkId: number, lagDays: number | null) => {
+  // 의존관계 생성 — lagDays 는 calendar days, 항상 필수
+  const createDep = async (sourceWorkId: number, targetWorkId: number, lagDays: number) => {
     try {
       const mutation = await workDepApi.createWorkDep({
         sourceWorkId,
@@ -51,7 +49,7 @@ export function useDependencyEditor(
   }
 
   // lagDays 수정
-  const updateLagDays = async (depId: number, lagDays: number | null) => {
+  const updateLagDays = async (depId: number, lagDays: number) => {
     try {
       const mutation = await workDepApi.updateWorkDep(depId, { lagDays })
       onMutation(mutation)
@@ -65,7 +63,7 @@ export function useDependencyEditor(
   }
 
   // lagDays 로컬 업데이트 (저장 전 UI 반영)
-  const updateLagDaysLocal = (depId: number, lagDays: number | null) => {
+  const updateLagDaysLocal = (depId: number, lagDays: number) => {
     const idx = deps.value.findIndex(d => d.id === depId)
     if (idx === -1) return
     deps.value = deps.value.map(d => d.id === depId ? { ...d, lagDays } : d)
@@ -77,7 +75,7 @@ export function useDependencyEditor(
       const e = edges.value[edgeIdx]!
       edges.value[edgeIdx] = {
         ...e,
-        data: { ...e.data, isFollowing: lagDays !== null, lagDays },
+        data: { ...e.data, lagDays },
       }
       edges.value = [...edges.value]
     }

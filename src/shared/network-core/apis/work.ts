@@ -11,12 +11,8 @@ export interface ComponentTypeGroup {
 // 작업 생성 페이로드
 export interface CreateWorkPayload {
   subWorkTypeId: number
-  componentTypes?: ComponentTypeGroup[]
-  zoneIds?: number[]
-  floorIds?: number[]
   startDate: string
   workLeadTime: number
-  isWorkingOnHoliday?: boolean
   annotation?: string
   scheduleVersionId: number
 }
@@ -61,7 +57,6 @@ export interface MutationResponse {
 export interface UpdateWorkPayload {
   startDate?: string
   workLeadTime?: number
-  isWorkingOnHoliday?: boolean
   positionY?: number
   subWorkTypeId?: number
   zoneIds?: number[]
