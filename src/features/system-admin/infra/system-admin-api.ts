@@ -1,6 +1,9 @@
 import apiClient from '@/shared/network-core/apiClient'
 import type {
+  ApiKeyMasked,
   Company,
+  CreateApiKeyPayload,
+  CreateApiKeyResponse,
   CreateCompanyPayload,
   UpdateCompanyPayload,
   Project,
@@ -160,5 +163,30 @@ export const systemAdminApi = {
   // User-Project 삭제
   async deleteUserToProject(id: number): Promise<void> {
     await apiClient.delete(`/userProject/deleteUserToProject/${id}`)
+  },
+
+  // API Key
+  async createApiKey(payload: CreateApiKeyPayload): Promise<CreateApiKeyResponse> {
+    const { data } = await apiClient.post<CreateApiKeyResponse>(
+      '/super/createApiKey',
+      payload,
+    )
+    return data
+  },
+
+  async getApiKeyList(comId: string): Promise<ApiKeyMasked[]> {
+    const { data } = await apiClient.get<ApiKeyMasked[]>('/super/getApiKeyList', {
+      params: { comId },
+    })
+    return data
+  },
+
+  async getApiKey(apiKeyId: string): Promise<ApiKeyMasked> {
+    const { data } = await apiClient.get<ApiKeyMasked>(`/super/getApiKey/${apiKeyId}`)
+    return data
+  },
+
+  async deleteApiKey(apiKeyId: string): Promise<void> {
+    await apiClient.delete(`/super/deleteApiKey/${apiKeyId}`)
   },
 }

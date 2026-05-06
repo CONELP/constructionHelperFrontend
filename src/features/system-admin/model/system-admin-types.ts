@@ -149,3 +149,42 @@ export interface UpdateUserToProjectPayload {
   projectRole?: string
   systemRoleId: number
 }
+
+// API Key
+export type ApiKeyScope = 'READ_ONLY' | 'READ_WRITE'
+
+export interface CreateApiKeyPayload {
+  name: string
+  comId: string
+  projectIds: string[]
+  scope: ApiKeyScope
+  expiresAt: string | null
+  allowedIps: string[] | null
+  rateLimit: number | null
+}
+
+export interface CreateApiKeyResponse {
+  apiKeyId: string
+  plaintextKey: string
+  keyPrefix: string
+  name: string
+  scope: ApiKeyScope
+  projectIds: string[]
+  expiresAt: string | null
+}
+
+export interface ApiKeyMasked {
+  apiKeyId: string
+  keyPrefix: string
+  keyLast4: string
+  name: string
+  comId: string
+  scope: ApiKeyScope
+  projectIds: string[]
+  expiresAt: string | null
+  allowedIps: string[] | null
+  rateLimit: number | null
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}

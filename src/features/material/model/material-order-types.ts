@@ -53,8 +53,10 @@ export interface MaterialDeliverySummary {
   deliveryDate: string
   unit: string
   mirDocumentNumber: string | null
+  catDocumentNumber: string | null
+  ccstDocumentNumber: string | null
   totalQuantity: number
-  docId: number | null
+  mirDocId: number | null
 }
 
 export interface MaterialDeliveryDetail {
@@ -65,11 +67,7 @@ export interface MaterialDeliveryDetail {
   workTypeName: string | null
   photoFiles: DeliveryPhotoFile[]
   deliveryLines: DeliveryLineResponse[]
-  docId: number | null
-}
-
-export interface CreateDeliveryResponse {
-  deliveryId: number
+  mirDocId: number | null
 }
 
 export interface DeliveryLineResponse {
@@ -126,21 +124,6 @@ export interface CatLineResponse {
   photos: CatPhotoFile[]
 }
 
-export interface CatBatchResult {
-  batch: number
-  catLineId: number
-  photos: CatPhotoFile[]
-  lineData: CatLineData
-}
-
-export interface CreateCatResponse {
-  batches: CatBatchResult[]
-}
-
-export interface CreateCatBatchInput {
-  batch: number
-  images: File[]
-}
 
 export type CcstPhotoType = 'D7' | 'D7_BOARD' | 'D28' | 'D28_BOARD'
 
@@ -160,7 +143,7 @@ export interface CcstLineData {
 export interface CcstLineResponse {
   ccstLineId: number
   materialDeliveryId: number
-  batch: number
+  lot: number
   setNo: number
   ageDays: number
   comp1: number | null
@@ -169,21 +152,3 @@ export interface CcstLineResponse {
   photos: CcstPhotoFile[]
 }
 
-export interface CcstBatchResultLine {
-  batch: number
-  setNo: number
-  ageDays: number
-  ccstLineId: number
-  photos: CcstPhotoFile[]
-  lineData: CcstLineData
-}
-
-export interface CreateCcstResponse {
-  lines: CcstBatchResultLine[]
-}
-
-export interface CreateCcstBatchInput {
-  batch: number
-  ageDays: 7 | 28
-  images: File[]
-}

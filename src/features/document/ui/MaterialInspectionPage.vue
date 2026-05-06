@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import PageContainer from '@/shared/helper-ui/PageContainer.vue'
 import AreaCard from '@/shared/helper-ui/AreaCard.vue'
 import { Button } from '@/shared/ui/button'
@@ -20,8 +21,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog'
-import { Download, RefreshCw, Trash2 } from 'lucide-vue-next'
+import { Download, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
+import MirCreateDialog from '@/features/document/ui/components/MirCreateDialog.vue'
 import { useMaterialInspectionPage } from '@/features/document/view-model/useMaterialInspectionPage'
+import type {
+  CreateMirDocumentResponse,
+  MaterialInspectionRequestResponse,
+} from '@/features/document/model/document-types'
 
 const {
   confirmDelete,
@@ -36,16 +42,52 @@ const {
   openDeleteDialog,
   showDeleteDialog,
 } = useMaterialInspectionPage()
+
+const createDialogOpen = ref(false)
+
+function openCreateDialog() {
+  createDialogOpen.value = true
+}
+
+function onMirCreated(response: CreateMirDocumentResponse) {
+  const mir: MaterialInspectionRequestResponse = {
+    id: response.id,
+    projectId: response.projectId,
+    docType: response.docType,
+    docNo: response.docNo,
+    status: response.status,
+    resultUrl: response.resultUrl,
+    pdfUrl: response.pdfUrl,
+    errCode: response.errCode,
+    errDetail: response.errDetail,
+    startedAt: response.startedAt,
+    completedAt: response.completedAt,
+    createdAt: response.createdAt,
+  }
+  mirList.value = [mir, ...mirList.value.filter((m) => m.id !== mir.id)]
+}
 </script>
 
 <template>
   <PageContainer title="자재반입검수요청서">
     <AreaCard>
+      <Button
+        size="lg"
+        class="w-full h-14 mb-4 text-base"
+        @click="openCreateDialog"
+      >
+        <Plus class="h-5 w-5 mr-2" />
+        자재반입검수요청서 생성
+      </Button>
+
       <div v-if="isLoading" class="text-sm text-muted-foreground text-center py-8">
         목록 로딩 중...
       </div>
 
-      <div v-else-if="mirList.length === 0" class="text-sm text-muted-foreground text-center py-8">
+      <div
+        v-else-if="mirList.length === 0"
+        class="text-sm text-muted-foreground text-center py-8"
+      >
         생성된 검수요청서가 없습니다.
       </div>
 
@@ -102,6 +144,11 @@ const {
         </TableBody>
       </Table>
     </AreaCard>
+
+    <MirCreateDialog
+      v-model:open="createDialogOpen"
+      @created="onMirCreated"
+    />
 
     <AlertDialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
       <AlertDialogContent>

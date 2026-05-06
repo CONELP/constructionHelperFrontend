@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PageContainer from '@/shared/helper-ui/PageContainer.vue'
 import AreaCard from '@/shared/helper-ui/AreaCard.vue'
@@ -14,13 +14,6 @@ import {
   TableRow,
 } from '@/shared/ui/table'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/shared/ui/dialog'
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -30,16 +23,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog'
-import { Checkbox } from '@/shared/ui/checkbox'
-import { Label } from '@/shared/ui/label'
 import { X } from 'lucide-vue-next'
-import { materialOrderApi } from '@/features/material/infra/material-order-api'
 import {
   formatMaterialOrderLineLocation as formatLocation,
   getMaterialOrderStatusBadgeClass as getStatusColor,
   getMaterialOrderStatusLabel as getStatusLabel,
 } from '@/features/material/model/material-order-rules'
-import type { MaterialOrderResponse } from '@/features/material/model/material-order-types'
 import { useMaterialOrder } from '@/features/material/view-model/useMaterialOrder'
 import { analyticsClient } from '@/shared/analytics/analyticsClient'
 
@@ -47,19 +36,6 @@ const router = useRouter()
 const { orders, isLoading, loadOrders, deleteOrder } = useMaterialOrder()
 const expandedOrders = reactive<Record<number, boolean>>({})
 
-// 송장입력 다이얼로그 상태
-const deliveryDialogOpen = ref(false)
-const selectedOrder = ref<MaterialOrderResponse | null>(null)
-const deliveryNotes = ref<File[]>([])
-const deliveryPhotos = ref<File[]>([])
-const selectedZoneIds = ref<number[]>([])
-const selectedFloorIds = ref<number[]>([])
-// TODO: section/usage 임시 비활성화
-// const selectedSectionIds = ref<number[]>([])
-// const selectedUsageIds = ref<number[]>([])
-const isSaving = ref(false)
-
-// 삭제 다이얼로그 상태
 const showDeleteDialog = ref(false)
 const deleteTargetId = ref<number | null>(null)
 const deleteTargetName = ref('')
@@ -89,108 +65,14 @@ async function confirmDeleteOrder() {
   }
 }
 
-// 선택된 order의 orderLines에서 고유한 위치정보 추출
-const uniqueZones = computed(() => {
-  if (!selectedOrder.value) return []
-  const map = new Map<number, string>()
-  selectedOrder.value.orderLines.forEach((line) => {
-    if (line.zoneId != null && line.zoneName) {
-      map.set(line.zoneId, line.zoneName)
-    }
-  })
-  return Array.from(map, ([id, name]) => ({ id, name }))
-})
-
-const uniqueFloors = computed(() => {
-  if (!selectedOrder.value) return []
-  const map = new Map<number, string>()
-  selectedOrder.value.orderLines.forEach((line) => {
-    if (line.floorId != null && line.floorName) {
-      map.set(line.floorId, line.floorName)
-    }
-  })
-  return Array.from(map, ([id, name]) => ({ id, name }))
-})
-
-// TODO: section/usage 임시 비활성화
-// const uniqueSections = computed(() => {
-//   if (!selectedOrder.value) return []
-//   const map = new Map<number, string>()
-//   selectedOrder.value.orderLines.forEach((line) => {
-//     if (line.sectionId != null && line.sectionName) {
-//       map.set(line.sectionId, line.sectionName)
-//     }
-//   })
-//   return Array.from(map, ([id, name]) => ({ id, name }))
-// })
-
-// const uniqueUsages = computed(() => {
-//   if (!selectedOrder.value) return []
-//   const map = new Map<number, string>()
-//   selectedOrder.value.orderLines.forEach((line) => {
-//     if (line.usageId != null && line.usageName) {
-//       map.set(line.usageId, line.usageName)
-//     }
-//   })
-//   return Array.from(map, ([id, name]) => ({ id, name }))
-// })
-
 function toggleOrder(orderId: number) {
   if (expandedOrders[orderId]) {
     expandedOrders[orderId] = false
   } else {
-    // 다른 발주서 모두 접기
     for (const key of Object.keys(expandedOrders)) {
       expandedOrders[Number(key)] = false
     }
     expandedOrders[orderId] = true
-  }
-}
-
-async function openDeliveryDialog(order: MaterialOrderResponse) {
-  selectedOrder.value = order
-  deliveryNotes.value = []
-  deliveryPhotos.value = []
-  await nextTick()
-  selectedZoneIds.value = uniqueZones.value.map((z) => z.id)
-  selectedFloorIds.value = uniqueFloors.value.map((f) => f.id)
-  // TODO: section/usage 임시 비활성화
-  // selectedSectionIds.value = uniqueSections.value.map((s) => s.id)
-  // selectedUsageIds.value = uniqueUsages.value.map((u) => u.id)
-  deliveryDialogOpen.value = true
-}
-
-function onDeliveryNotesChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  deliveryNotes.value = input.files ? Array.from(input.files) : []
-}
-
-function onDeliveryPhotosChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  deliveryPhotos.value = input.files ? Array.from(input.files) : []
-}
-
-function toggleId(list: number[], id: number): number[] {
-  return list.includes(id) ? list.filter((v) => v !== id) : [...list, id]
-}
-
-async function saveDelivery() {
-  if (!selectedOrder.value) return
-  isSaving.value = true
-  try {
-    await materialOrderApi.createMaterialDelivery({
-      images: [...deliveryNotes.value, ...deliveryPhotos.value],
-    })
-    deliveryDialogOpen.value = false
-    analyticsClient.trackAction('material_delivery', 'create_delivery', 'success')
-    router.push('/helper/material/delivery')
-  } catch (error: unknown) {
-    console.error('송장입력 실패:', error)
-    analyticsClient.trackAction('material_delivery', 'create_delivery', 'fail')
-    const err = error as { response?: { data?: { message?: string } }; message?: string }
-    alert(err.response?.data?.message || err.message)
-  } finally {
-    isSaving.value = false
   }
 }
 
@@ -251,7 +133,7 @@ onMounted(() => {
                   variant="outline"
                   size="sm"
                   :disabled="order.orderStatus !== 'ORDER_COMPLETED'"
-                  @click="openDeliveryDialog(order)"
+                  @click="router.push('/helper/document/material-inspection')"
                 >
                   송장입력
                 </Button>
@@ -307,117 +189,6 @@ onMounted(() => {
         </div>
       </div>
     </AreaCard>
-
-    <!-- 송장입력 다이얼로그 -->
-    <Dialog v-model:open="deliveryDialogOpen">
-      <DialogContent class="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>송장입력</DialogTitle>
-        </DialogHeader>
-
-        <div class="space-y-5 py-2">
-          <!-- 송장파일 -->
-          <div class="space-y-2">
-            <div class="flex items-center gap-2">
-              <Label>송장파일</Label>
-              <span class="text-xs text-muted-foreground">미입력 가능, 다시 눌러서 사진 재선택</span>
-            </div>
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.png,.jpg,.jpeg"
-              class="block w-full text-sm text-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-input file:bg-muted file:text-sm file:font-medium hover:file:bg-muted/80 cursor-pointer"
-              @change="onDeliveryNotesChange"
-            />
-          </div>
-
-          <!-- 반입사진 -->
-          <div class="space-y-2">
-            <div class="flex items-center gap-2">
-              <Label>반입사진</Label>
-              <span class="text-xs text-muted-foreground">미입력 가능, 다시 눌러서 사진 재선택</span>
-            </div>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              class="block w-full text-sm text-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-input file:bg-muted file:text-sm file:font-medium hover:file:bg-muted/80 cursor-pointer"
-              @change="onDeliveryPhotosChange"
-            />
-          </div>
-
-          <!-- 위치정보 -->
-          <div v-if="uniqueZones.length > 0" class="space-y-2">
-            <Label>존</Label>
-            <div class="flex flex-wrap gap-3">
-              <div v-for="zone in uniqueZones" :key="zone.id" class="flex items-center gap-1.5">
-                <Checkbox
-                  :id="`zone-${zone.id}`"
-                  :model-value="selectedZoneIds.includes(zone.id)"
-                  @update:model-value="selectedZoneIds = toggleId(selectedZoneIds, zone.id)"
-                />
-                <label :for="`zone-${zone.id}`" class="text-sm cursor-pointer">{{ zone.name }}</label>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="uniqueFloors.length > 0" class="space-y-2">
-            <Label>층</Label>
-            <div class="flex flex-wrap gap-3">
-              <div v-for="floor in uniqueFloors" :key="floor.id" class="flex items-center gap-1.5">
-                <Checkbox
-                  :id="`floor-${floor.id}`"
-                  :model-value="selectedFloorIds.includes(floor.id)"
-                  @update:model-value="selectedFloorIds = toggleId(selectedFloorIds, floor.id)"
-                />
-                <label :for="`floor-${floor.id}`" class="text-sm cursor-pointer">{{ floor.name }}</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- TODO: section/usage 임시 비활성화 -->
-          <!-- <div v-if="uniqueSections.length > 0" class="space-y-2">
-            <Label>구역</Label>
-            <div class="flex flex-wrap gap-3">
-              <div v-for="section in uniqueSections" :key="section.id" class="flex items-center gap-1.5">
-                <Checkbox
-                  :id="`section-${section.id}`"
-                  :model-value="selectedSectionIds.includes(section.id)"
-                  @update:model-value="selectedSectionIds = toggleId(selectedSectionIds, section.id)"
-                />
-                <label :for="`section-${section.id}`" class="text-sm cursor-pointer">{{ section.name }}</label>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="uniqueUsages.length > 0" class="space-y-2">
-            <Label>용도</Label>
-            <div class="flex flex-wrap gap-3">
-              <div v-for="usage in uniqueUsages" :key="usage.id" class="flex items-center gap-1.5">
-                <Checkbox
-                  :id="`usage-${usage.id}`"
-                  :model-value="selectedUsageIds.includes(usage.id)"
-                  @update:model-value="selectedUsageIds = toggleId(selectedUsageIds, usage.id)"
-                />
-                <label :for="`usage-${usage.id}`" class="text-sm cursor-pointer">{{ usage.name }}</label>
-              </div>
-            </div>
-          </div> -->
-        </div>
-
-        <DialogFooter class="flex-col items-end gap-2">
-          <div class="flex gap-2">
-            <Button variant="outline" @click="deliveryDialogOpen = false">취소</Button>
-            <Button :disabled="isSaving" @click="saveDelivery">
-              {{ isSaving ? '저장 중...' : '저장' }}
-            </Button>
-          </div>
-          <p v-if="isSaving" class="text-sm text-muted-foreground">
-            시간이 좀 걸립니다. 기다려주세요.
-          </p>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
 
     <!-- 발주서 삭제 확인 다이얼로그 -->
     <AlertDialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">

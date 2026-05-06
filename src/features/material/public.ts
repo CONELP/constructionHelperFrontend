@@ -14,21 +14,14 @@ export {
 
 export type { MaterialOrderRepository } from '@/features/material/use-cases/material-order-repository'
 export type {
-  CatBatchResult,
   CatLineData,
   CatLineResponse,
   CatPhotoFile,
   CatPhotoType,
-  CcstBatchResultLine,
   CcstLineData,
   CcstLineResponse,
   CcstPhotoFile,
   CcstPhotoType,
-  CreateCatBatchInput,
-  CreateCatResponse,
-  CreateCcstBatchInput,
-  CreateCcstResponse,
-  CreateDeliveryResponse,
   DeliveryLineResponse,
   DeliveryPhotoFile,
   DeliveryQuantityByDate,
@@ -41,7 +34,7 @@ export type {
   SpecSummary,
 } from '@/features/material/model/material-order-types'
 
-export { default as MaterialDeliveryCreateDialog } from '@/features/material/ui/components/MaterialDeliveryCreateDialog.vue'
+export { default as MaterialDeliveryEditPanel } from '@/features/material/ui/components/MaterialDeliveryEditPanel.vue'
 export { default as InvoicePageView } from '@/features/material/ui/InvoicePage.vue'
 export { default as MaterialDeliveryPageView } from '@/features/material/ui/MaterialDeliveryPage.vue'
 export { default as OutgoingMaterialPageView } from '@/features/material/ui/OutgoingMaterialPage.vue'

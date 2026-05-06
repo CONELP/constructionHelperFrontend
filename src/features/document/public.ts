@@ -9,7 +9,6 @@ export {
 export { materialInspectionRequestRepository } from '@/features/document/infra/material-inspection-request-repository'
 export { dailyReportRepository } from '@/features/document/infra/daily-report-repository'
 export {
-  createMir,
   deleteDocument,
   downloadDocument,
   getMaterialInspectionRequests,
@@ -26,6 +25,9 @@ export {
 export type { MaterialInspectionRequestRepository } from '@/features/document/use-cases/material-inspection-request'
 export type { DailyReportRepository } from '@/features/document/use-cases/daily-report'
 export type {
+  CreateCatDocumentRequest,
+  CreateCcstDocumentRequest,
+  CreateMirDocumentRequest,
   DailyReportResponse,
   DocumentJobDocType,
   DocumentJobResponse,

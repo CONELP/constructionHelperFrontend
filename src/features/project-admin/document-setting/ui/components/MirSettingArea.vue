@@ -2,17 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Button } from '@/shared/ui/button'
-import { Input } from '@/shared/ui/input'
 import { Label } from '@/shared/ui/label'
-import { Separator } from '@/shared/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select'
-import { X } from 'lucide-vue-next'
 import { useProjectStore } from '@/app/context/stores/project'
 import { useDocumentSetting } from '@/features/project-admin/document-setting/view-model/useDocumentSetting'
 
@@ -21,14 +11,24 @@ const { selectedProjectId } = storeToRefs(projectStore)
 
 const {
   isLoading,
-  isSaving,
-  cellRef,
+  isSavingScriptPrompt,
+  isUploadingTemplate,
+  isUploadingTemplateRef,
   mirTemplateUrl,
-  imageCategories,
+  mirTemplateRefUrl,
+  scriptPrompt,
   load,
-  save,
   uploadTemplate,
+  uploadTemplateRef,
+  saveScriptPrompt,
 } = useDocumentSetting()
+
+const scriptPromptPlaceholder = `예) 라인은 시트 0의 5행부터 시작하며, 사진은 시트 1의 A10/A15/A20 자리에 카테고리 순서대로 배치한다.
+- 양식의 특수 셀 위치, 페이지 분할, 머리글/꼬리말 등 LLM 이 양식변경/내용입력 스크립트를 생성할 때 참고할 자유 텍스트 지침을 작성하세요.
+- 비워두면 LLM 은 기본 동작으로 생성합니다.`
+
+const templateFileInput = ref<HTMLInputElement | null>(null)
+const templateRefFileInput = ref<HTMLInputElement | null>(null)
 
 onMounted(() => {
   if (selectedProjectId.value) load(selectedProjectId.value)
@@ -38,52 +38,44 @@ watch(selectedProjectId, (pid) => {
   if (pid) load(pid)
 })
 
-// 템플릿 업로드
-const templateFileInput = ref<HTMLInputElement | null>(null)
-function onTemplateFileChange(e: Event) {
+async function onTemplateFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  if (file) {
-    if (!selectedProjectId.value) {
-      alert('프로젝트를 먼저 선택해주세요.')
-      input.value = ''
-      return
-    }
-    uploadTemplate(selectedProjectId.value, file)
+  if (!file) return
+  if (!selectedProjectId.value) {
+    alert('프로젝트를 먼저 선택해주세요.')
+    input.value = ''
+    return
+  }
+  try {
+    await uploadTemplate(selectedProjectId.value, file)
+  } finally {
     input.value = ''
   }
 }
 
-// 오버플로우 관리
-function addOverflow() {
-  cellRef.lines.overflow.push({ startCell: '', maxRows: '' })
+async function onTemplateRefFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (!selectedProjectId.value) {
+    alert('프로젝트를 먼저 선택해주세요.')
+    input.value = ''
+    return
+  }
+  try {
+    await uploadTemplateRef(selectedProjectId.value, file)
+  } finally {
+    input.value = ''
+  }
 }
 
-function removeOverflow(index: number) {
-  cellRef.lines.overflow.splice(index, 1)
-}
-
-// 라인 요약 (lineConcat) 관리
-const lineConcatFieldOptions = [
-  { value: 'specName', label: '자재규격명' },
-  { value: 'manufacturer', label: '제조사' },
-]
-
-function addLineConcat() {
-  cellRef.lineConcat.push({ cell: '', field: 'specName', separator: ', ' })
-}
-
-function removeLineConcat(index: number) {
-  cellRef.lineConcat.splice(index, 1)
-}
-
-// 사진 항목 관리
-function addPhoto() {
-  cellRef.photos.push({ key: '', cells: '', descriptionOffsetRow: '', descriptionOffsetCol: '' })
-}
-
-function removePhoto(index: number) {
-  cellRef.photos.splice(index, 1)
+function onSaveScriptPrompt() {
+  if (!selectedProjectId.value) {
+    alert('프로젝트를 먼저 선택해주세요.')
+    return
+  }
+  saveScriptPrompt(selectedProjectId.value)
 }
 </script>
 
@@ -92,10 +84,12 @@ function removePhoto(index: number) {
     설정 로딩 중...
   </div>
 
-  <div v-else class="space-y-8">
-    <!-- 섹션 1: 엑셀 템플릿 -->
-    <div>
-      <h3 class="text-sm font-semibold mb-3">엑셀 템플릿</h3>
+  <div v-else class="flex flex-col gap-6">
+    <div class="flex flex-col gap-2 rounded-md border border-border p-3">
+      <Label class="text-sm font-semibold">MIR 엑셀 템플릿 (실제 출력용)</Label>
+      <p class="text-xs text-muted-foreground">
+        · 문서 생성 결과물의 base 가 되는 실제 출력용 xlsx.
+      </p>
       <div class="flex items-center gap-3">
         <span class="text-sm text-muted-foreground">
           {{ mirTemplateUrl ? '템플릿 등록됨' : '템플릿 없음' }}
@@ -110,236 +104,62 @@ function removePhoto(index: number) {
         <Button
           variant="outline"
           size="sm"
+          :disabled="isUploadingTemplate"
           @click="templateFileInput?.click()"
         >
-          {{ mirTemplateUrl ? '템플릿 변경' : '템플릿 업로드' }}
+          {{ isUploadingTemplate ? '업로드 중...' : (mirTemplateUrl ? '템플릿 변경' : '템플릿 등록') }}
         </Button>
       </div>
     </div>
 
-    <Separator />
-
-    <!-- 섹션 2: 셀 매핑 -->
-    <div>
-      <h3 class="text-sm font-semibold mb-3">셀 매핑</h3>
-
-      <!-- 기본정보 -->
-      <p class="text-xs text-muted-foreground font-medium mb-2">기본정보</p>
-      <div class="grid grid-cols-2 gap-3 mb-6">
-        <div class="flex items-center gap-2">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">공급업체</Label>
-          <Input v-model="cellRef.delivery.supplier" placeholder="예: 0!B2" class="h-8 text-sm" />
-        </div>
-        <div class="flex items-center gap-2">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">납품일</Label>
-          <Input v-model="cellRef.delivery.deliveryDate" placeholder="예: 0!D2" class="h-8 text-sm" />
-        </div>
-        <div class="flex items-center gap-2">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">사용위치</Label>
-          <Input v-model="cellRef.delivery.location" placeholder="예: 0!B3" class="h-8 text-sm" />
-        </div>
-        <div class="flex items-center gap-2">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">문서번호</Label>
-          <Input v-model="cellRef.delivery.documentNumber" placeholder="예: 0!D3" class="h-8 text-sm" />
-        </div>
-        <div class="flex items-center gap-2">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">자재유형명</Label>
-          <Input v-model="cellRef.delivery.materialTypeName" placeholder="예: 0!B2" class="h-8 text-sm" />
-        </div>
-        <div class="flex items-center gap-2">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">대분류명</Label>
-          <Input v-model="cellRef.delivery.divisionName" placeholder="예: 0!D2" class="h-8 text-sm" />
-        </div>
+    <div class="flex flex-col gap-2 rounded-md border border-border p-3">
+      <Label class="text-sm font-semibold">MIR 참조용 템플릿 (LLM 가이드용)</Label>
+      <div class="text-xs text-muted-foreground space-y-1">
+        <p>· placeholder 만 남긴 xlsx. LLM 양식변경·내용입력 directive 생성의 base 로 사용됩니다.</p>
+        <p>· 실제 출력용 템플릿과 셀 위치 / 시트 구조가 동일해야 합니다. (같은 directive 가 양쪽에 적용됨)</p>
+        <p>· 미등록 상태에서 문서 생성 호출 시 <code>TEMPLATE_REF_NOT_CONFIGURED</code> 로 실패합니다.</p>
       </div>
-
-      <Separator class="my-4" />
-
-      <!-- 자재 라인 -->
-      <p class="text-xs text-muted-foreground font-medium mb-2">자재 라인</p>
-      <div class="space-y-3 mb-6">
-        <div class="flex items-center gap-3">
-          <Label class="text-xs text-muted-foreground w-24 shrink-0">시작 셀</Label>
-          <Input v-model="cellRef.lines.startCell" placeholder="예: 0!A5" class="h-8 text-sm w-32" />
-          <div class="flex items-center gap-1.5">
-            <Label class="text-xs text-muted-foreground shrink-0">최대 행 수</Label>
-            <Input
-              v-model="cellRef.lines.maxRows"
-              type="number"
-              min="0"
-              placeholder="0"
-              class="h-8 text-sm w-20"
-            />
-          </div>
-        </div>
-        <p class="text-xs text-muted-foreground mt-2 mb-1">컬럼 오프셋 (비워두면 미사용)</p>
-        <div class="grid grid-cols-5 gap-3">
-          <div class="flex flex-col gap-1">
-            <Label class="text-xs text-muted-foreground">순번 (no)</Label>
-            <Input
-              v-model="cellRef.lines.columns.no"
-              placeholder="미사용"
-              type="number"
-              class="h-8 text-sm"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <Label class="text-xs text-muted-foreground">규격명 (specName)</Label>
-            <Input
-              v-model="cellRef.lines.columns.specName"
-              placeholder="미사용"
-              type="number"
-              class="h-8 text-sm"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <Label class="text-xs text-muted-foreground">제조사 (manufacturer)</Label>
-            <Input
-              v-model="cellRef.lines.columns.manufacturer"
-              placeholder="미사용"
-              type="number"
-              class="h-8 text-sm"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <Label class="text-xs text-muted-foreground">수량 (quantity)</Label>
-            <Input
-              v-model="cellRef.lines.columns.quantity"
-              placeholder="미사용"
-              type="number"
-              class="h-8 text-sm"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <Label class="text-xs text-muted-foreground">단위 (unit)</Label>
-            <Input
-              v-model="cellRef.lines.columns.unit"
-              placeholder="미사용"
-              type="number"
-              class="h-8 text-sm"
-            />
-          </div>
-        </div>
-
-        <!-- 오버플로우 -->
-        <p class="text-xs text-muted-foreground mt-4 mb-1">오버플로우</p>
-        <div class="space-y-2 mb-2">
-          <div
-            v-for="(ov, ovIdx) in cellRef.lines.overflow"
-            :key="ovIdx"
-            class="flex items-center gap-2"
-          >
-            <Input v-model="ov.startCell" placeholder="시작 셀 (예: 1!A5)" class="h-8 text-sm w-32" />
-            <div class="flex items-center gap-1.5">
-              <Label class="text-xs text-muted-foreground shrink-0">최대 행 수</Label>
-              <Input v-model="ov.maxRows" type="number" min="0" placeholder="0" class="h-8 text-sm w-20" />
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-              @click="removeOverflow(ovIdx)"
-            >
-              <X class="h-4 w-4" />
-            </Button>
-          </div>
-          <Button variant="outline" size="sm" @click="addOverflow">+ 오버플로우 추가</Button>
-        </div>
-      </div>
-
-      <Separator class="my-4" />
-
-      <!-- 라인 요약 -->
-      <p class="text-xs text-muted-foreground font-medium mb-2">라인 요약</p>
-      <div class="space-y-2 mb-6">
-        <div
-          v-for="(lc, idx) in cellRef.lineConcat"
-          :key="idx"
-          class="flex items-center gap-2"
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-muted-foreground">
+          {{ mirTemplateRefUrl ? '참조 템플릿 등록됨' : '참조 템플릿 없음' }}
+        </span>
+        <input
+          ref="templateRefFileInput"
+          type="file"
+          accept=".xlsx,.xls"
+          class="hidden"
+          @change="onTemplateRefFileChange"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="isUploadingTemplateRef"
+          @click="templateRefFileInput?.click()"
         >
-          <Input v-model="lc.cell" placeholder="예: 0!F5" class="h-8 text-sm w-24" />
-          <Select :model-value="lc.field" @update:model-value="lc.field = String($event)">
-            <SelectTrigger class="w-36 h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem
-                v-for="opt in lineConcatFieldOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >
-                {{ opt.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <Input v-model="lc.separator" placeholder="구분자" class="h-8 text-sm w-20" />
-          <Button
-            variant="ghost"
-            size="sm"
-            class="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-            @click="removeLineConcat(idx)"
-          >
-            <X class="h-4 w-4" />
-          </Button>
-        </div>
-        <Button variant="outline" size="sm" @click="addLineConcat">+ 추가</Button>
-      </div>
-
-      <Separator class="my-4" />
-
-      <!-- 사진 -->
-      <p class="text-xs text-muted-foreground font-medium mb-2">사진</p>
-      <div class="space-y-2">
-        <div
-          v-for="(photo, idx) in cellRef.photos"
-          :key="idx"
-          class="space-y-2 border border-border rounded-lg p-3"
-        >
-          <div class="flex items-center gap-2">
-            <Select :model-value="photo.key" @update:model-value="photo.key = String($event)">
-              <SelectTrigger class="w-36 h-8 text-sm">
-                <SelectValue placeholder="카테고리 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="cat in imageCategories"
-                  :key="cat.key"
-                  :value="cat.key"
-                >
-                  {{ cat.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Input v-model="photo.cells" placeholder="예: 1!A10, 1!A15, 1!A20" class="h-8 text-sm flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              class="h-8 w-8 p-0 text-muted-foreground hover:text-destructive ml-auto"
-              @click="removePhoto(idx)"
-            >
-              <X class="h-4 w-4" />
-            </Button>
-          </div>
-          <div class="flex items-center gap-2">
-            <Label class="text-xs text-muted-foreground shrink-0">설명 오프셋</Label>
-            <div class="flex items-center gap-1">
-              <Label class="text-xs text-muted-foreground shrink-0">Row</Label>
-              <Input v-model="photo.descriptionOffsetRow" placeholder="0" type="number" class="h-8 text-sm w-16" />
-            </div>
-            <div class="flex items-center gap-1">
-              <Label class="text-xs text-muted-foreground shrink-0">Col</Label>
-              <Input v-model="photo.descriptionOffsetCol" placeholder="0" type="number" class="h-8 text-sm w-16" />
-            </div>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" @click="addPhoto">+ 추가</Button>
+          {{ isUploadingTemplateRef ? '업로드 중...' : (mirTemplateRefUrl ? '참조 템플릿 변경' : '참조 템플릿 등록') }}
+        </Button>
       </div>
     </div>
 
-    <!-- 저장 버튼 -->
-    <div class="flex justify-end pt-4">
-      <Button :disabled="isSaving" @click="save">
-        {{ isSaving ? '저장 중...' : '저장' }}
-      </Button>
+    <div class="flex flex-col gap-2">
+      <Label>MIR 스크립트 프롬프트</Label>
+      <div class="text-xs text-muted-foreground space-y-1">
+        <p>· MIR 문서 생성 시 양식변경 / 내용입력 LLM 호출에 매번 함께 전달되는 자유 텍스트 지침입니다.</p>
+        <p>· 양식의 특수 규칙(라인 시작 위치, 사진 카테고리(<code>DELIVERY_NOTE</code> / <code>MILL_SHEET</code> / <code>TAG</code> / <code>DELIVERY_PHOTO</code>) 배치, 페이지 분할 등)을 작성하세요.</p>
+        <p>· 비워두면 기본 동작으로 생성됩니다.</p>
+      </div>
+      <textarea
+        v-model="scriptPrompt"
+        :placeholder="scriptPromptPlaceholder"
+        :disabled="isSavingScriptPrompt"
+        rows="14"
+        class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+      />
+      <div class="flex justify-end">
+        <Button :disabled="isSavingScriptPrompt" @click="onSaveScriptPrompt">
+          {{ isSavingScriptPrompt ? '저장 중...' : '스크립트 프롬프트 저장' }}
+        </Button>
+      </div>
     </div>
   </div>
 </template>

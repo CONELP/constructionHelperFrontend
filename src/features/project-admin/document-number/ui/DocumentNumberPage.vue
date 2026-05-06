@@ -11,6 +11,8 @@ import type {
   DocConfigDocType,
   ExcelCellRefDocType,
   ScriptPromptDocType,
+  TemplateDocType,
+  TemplateRefDocType,
 } from '@/shared/network-core/apis/docConfig'
 
 const projectStore = useProjectStore()
@@ -23,16 +25,19 @@ const {
   isGeneratingCellRef,
   isSavingScriptPrompt,
   isUploadingTemplate,
+  isUploadingTemplateRef,
   prompts,
   cellRefs,
   scriptPrompts,
   templateUrls,
+  templateRefUrls,
   load,
   save,
   saveCellRef,
   generateCellRef,
   saveScriptPrompt,
   uploadTemplate,
+  uploadTemplateRef,
 } = useDocumentNumber()
 
 const tabs = [
@@ -73,15 +78,26 @@ const scriptPromptPlaceholder = `예) 28일 강도 셀 좌표는 시트 2번의 
 - 양식의 특수한 셀 위치, 페이지 분할, 머리글/꼬리말, 정렬 규칙 등 LLM 이 양식변경/내용입력 스크립트를 생성할 때 참고할 자유 텍스트 지침을 작성하세요.
 - 비워두면 LLM 은 기본 동작으로 생성합니다.`
 
-const templateFileInputs = ref<Record<DocConfigDocType, HTMLInputElement | null>>({
+const templateFileInputs = ref<Record<TemplateDocType, HTMLInputElement | null>>({
+  MIR: null,
+  CAT: null,
+})
+
+function setTemplateFileInputRef(docType: TemplateDocType) {
+  return (el: unknown) => {
+    templateFileInputs.value[docType] = el as HTMLInputElement | null
+  }
+}
+
+const templateRefFileInputs = ref<Record<TemplateRefDocType, HTMLInputElement | null>>({
   MIR: null,
   CAT: null,
   CCST: null,
 })
 
-function setTemplateFileInputRef(docType: DocConfigDocType) {
+function setTemplateRefFileInputRef(docType: TemplateRefDocType) {
   return (el: unknown) => {
-    templateFileInputs.value[docType] = el as HTMLInputElement | null
+    templateRefFileInputs.value[docType] = el as HTMLInputElement | null
   }
 }
 
@@ -125,7 +141,7 @@ function onSaveScriptPrompt(docType: ScriptPromptDocType) {
   saveScriptPrompt(selectedProjectId.value, docType)
 }
 
-async function onTemplateFileChange(docType: DocConfigDocType, e: Event) {
+async function onTemplateFileChange(docType: TemplateDocType, e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -136,6 +152,22 @@ async function onTemplateFileChange(docType: DocConfigDocType, e: Event) {
   }
   try {
     await uploadTemplate(selectedProjectId.value, docType, file)
+  } finally {
+    input.value = ''
+  }
+}
+
+async function onTemplateRefFileChange(docType: TemplateRefDocType, e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (!selectedProjectId.value) {
+    alert('프로젝트를 먼저 선택해주세요.')
+    input.value = ''
+    return
+  }
+  try {
+    await uploadTemplateRef(selectedProjectId.value, docType, file)
   } finally {
     input.value = ''
   }
@@ -151,122 +183,78 @@ async function onTemplateFileChange(docType: DocConfigDocType, e: Event) {
       :tabs="tabs"
       default-tab="MIR"
     >
-      <template #tab-MIR>
+      <template v-for="docType in (['MIR', 'CAT', 'CCST'] as const)" #[`tab-${docType}`] :key="docType">
         <div v-if="isLoading" class="text-sm text-muted-foreground text-center py-8">
           설정 로딩 중...
         </div>
         <div v-else class="flex flex-col gap-6">
-          <div class="flex flex-col gap-2 rounded-md border border-border p-3">
-            <Label class="text-sm font-semibold">엑셀 템플릿</Label>
+          <div v-if="docType !== 'CCST'" class="flex flex-col gap-2 rounded-md border border-border p-3">
+            <Label class="text-sm font-semibold">{{ docTypeLabels[docType] }} 엑셀 템플릿 (실제 출력용)</Label>
+            <p class="text-xs text-muted-foreground">
+              · 문서 생성 결과물의 base 가 되는 실제 출력용 xlsx.
+            </p>
             <div class="flex items-center gap-3">
               <span class="text-sm text-muted-foreground">
-                {{ templateUrls.MIR ? '템플릿 등록됨' : '템플릿 없음' }}
+                {{ templateUrls[docType as TemplateDocType] ? '템플릿 등록됨' : '템플릿 없음' }}
               </span>
               <input
-                :ref="setTemplateFileInputRef('MIR')"
+                :ref="setTemplateFileInputRef(docType as TemplateDocType)"
                 type="file"
                 accept=".xlsx,.xls"
                 class="hidden"
-                @change="(e) => onTemplateFileChange('MIR', e)"
+                @change="(e) => onTemplateFileChange(docType as TemplateDocType, e)"
               />
               <Button
                 variant="outline"
                 size="sm"
-                :disabled="isUploadingTemplate.MIR"
-                @click="templateFileInputs.MIR?.click()"
+                :disabled="isUploadingTemplate[docType as TemplateDocType]"
+                @click="templateFileInputs[docType as TemplateDocType]?.click()"
               >
-                {{ isUploadingTemplate.MIR ? '업로드 중...' : (templateUrls.MIR ? '템플릿 변경' : '템플릿 등록') }}
+                {{ isUploadingTemplate[docType as TemplateDocType] ? '업로드 중...' : (templateUrls[docType as TemplateDocType] ? '템플릿 변경' : '템플릿 등록') }}
               </Button>
             </div>
           </div>
 
-          <div class="flex flex-col gap-2">
-            <Label>{{ docTypeLabels.MIR }} 문서번호 생성 규칙</Label>
-            <div class="text-xs text-muted-foreground space-y-1">
-              <p>· LLM 이 이 텍스트를 그대로 읽고 문서번호를 생성합니다.</p>
-              <p>· 포맷 예시, 치환 변수(<code>{yyyyMMdd}</code>, <code>{division}</code> 등), 금지 조건을 구체적으로 기재하세요.</p>
-            </div>
-            <textarea
-              v-model="prompts.MIR"
-              :placeholder="placeholder"
-              :disabled="isSaving.MIR"
-              rows="10"
-              class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-            />
-            <div class="flex justify-end">
-              <Button :disabled="isSaving.MIR" @click="onSave('MIR')">
-                {{ isSaving.MIR ? '저장 중...' : '문서번호 규칙 저장' }}
-              </Button>
-            </div>
+          <div v-else class="flex flex-col gap-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+            <p>· CCST 는 자체 출력용 템플릿을 사용하지 않습니다. CAT 결과 xlsx 위에 덧칠되는 흐름입니다.</p>
+            <p>· 문서번호도 CAT 잡의 docNo 를 재사용하므로 별도 규칙이 필요하지 않습니다.</p>
           </div>
 
-          <div class="flex flex-col gap-2">
-            <Label>{{ docTypeLabels.MIR }} 엑셀 셀 좌표 (JSON)</Label>
-            <div class="text-xs text-muted-foreground space-y-1">
-              <p>· 템플릿 시트의 셀 주소 매핑 JSON. photos 섹션은 sheet index 기준으로 types / cells / overflow 지정.</p>
-              <p>· <strong>자동 생성</strong>은 LLM이 템플릿을 분석해 재생성 후 즉시 DB에 저장합니다.</p>
-              <p>· 수동 편집 후에는 <strong>셀 좌표 저장</strong>으로 반영. 스키마 위반 시 서버가 400을 반환합니다.</p>
-            </div>
-            <textarea
-              v-model="cellRefs.MIR"
-              :placeholder="cellRefPlaceholder"
-              :disabled="isSavingCellRef.MIR || isGeneratingCellRef.MIR"
-              rows="18"
-              class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-            />
-            <div class="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                :disabled="isGeneratingCellRef.MIR || isSavingCellRef.MIR"
-                @click="onGenerateCellRef('MIR')"
-              >
-                {{ isGeneratingCellRef.MIR ? '생성 중...' : '자동 생성' }}
-              </Button>
-              <Button
-                :disabled="isSavingCellRef.MIR || isGeneratingCellRef.MIR"
-                @click="onSaveCellRef('MIR')"
-              >
-                {{ isSavingCellRef.MIR ? '저장 중...' : '셀 좌표 저장' }}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <template v-for="docType in (['CAT', 'CCST'] as const)" #[`tab-${docType}`] :key="docType">
-        <div v-if="isLoading" class="text-sm text-muted-foreground text-center py-8">
-          설정 로딩 중...
-        </div>
-        <div v-else class="flex flex-col gap-6">
           <div class="flex flex-col gap-2 rounded-md border border-border p-3">
-            <Label class="text-sm font-semibold">{{ docTypeLabels[docType] }} 엑셀 템플릿</Label>
+            <Label class="text-sm font-semibold">{{ docTypeLabels[docType] }} 참조용 템플릿 (LLM 가이드용)</Label>
+            <div class="text-xs text-muted-foreground space-y-1">
+              <p>· placeholder 만 남긴 xlsx. LLM 양식변경·내용입력 directive 생성의 base 로 사용됩니다.</p>
+              <p v-if="docType !== 'CCST'">· 실제 출력용 템플릿과 셀 위치 / 시트 구조가 동일해야 합니다. (같은 directive 가 양쪽에 적용됨)</p>
+              <p v-else>· CCST 는 출력용 템플릿이 따로 없으므로, 참조용 템플릿은 CAT 결과 xlsx 와 구조가 일치해야 합니다.</p>
+              <p>· 미등록 상태에서 문서 생성 호출 시 <code>TEMPLATE_REF_NOT_CONFIGURED</code> 로 실패합니다.</p>
+            </div>
             <div class="flex items-center gap-3">
               <span class="text-sm text-muted-foreground">
-                {{ templateUrls[docType] ? '템플릿 등록됨' : '템플릿 없음' }}
+                {{ templateRefUrls[docType] ? '참조 템플릿 등록됨' : '참조 템플릿 없음' }}
               </span>
               <input
-                :ref="setTemplateFileInputRef(docType)"
+                :ref="setTemplateRefFileInputRef(docType)"
                 type="file"
                 accept=".xlsx,.xls"
                 class="hidden"
-                @change="(e) => onTemplateFileChange(docType, e)"
+                @change="(e) => onTemplateRefFileChange(docType, e)"
               />
               <Button
                 variant="outline"
                 size="sm"
-                :disabled="isUploadingTemplate[docType]"
-                @click="templateFileInputs[docType]?.click()"
+                :disabled="isUploadingTemplateRef[docType]"
+                @click="templateRefFileInputs[docType]?.click()"
               >
-                {{ isUploadingTemplate[docType] ? '업로드 중...' : (templateUrls[docType] ? '템플릿 변경' : '템플릿 등록') }}
+                {{ isUploadingTemplateRef[docType] ? '업로드 중...' : (templateRefUrls[docType] ? '참조 템플릿 변경' : '참조 템플릿 등록') }}
               </Button>
             </div>
           </div>
 
-          <div class="flex flex-col gap-2">
+          <div v-if="docType !== 'CCST'" class="flex flex-col gap-2">
             <Label>{{ docTypeLabels[docType] }} 문서번호 생성 규칙</Label>
             <div class="text-xs text-muted-foreground space-y-1">
               <p>· LLM 이 이 텍스트를 그대로 읽고 문서번호를 생성합니다.</p>
-              <p>· 포맷 예시, 치환 변수, 금지 조건을 구체적으로 기재하세요.</p>
+              <p>· 포맷 예시, 치환 변수(<code>{yyyyMMdd}</code>, <code>{division}</code> 등), 금지 조건을 구체적으로 기재하세요.</p>
             </div>
             <textarea
               v-model="prompts[docType]"

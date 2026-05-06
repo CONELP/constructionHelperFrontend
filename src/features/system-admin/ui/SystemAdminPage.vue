@@ -19,6 +19,7 @@ import UserManagementArea from '@/features/system-admin/ui/components/UserManage
 import ProjectManagementArea from '@/features/system-admin/ui/components/ProjectManagementArea.vue'
 import RoleManagementArea from '@/features/system-admin/ui/components/RoleManagementArea.vue'
 import MappingManagementArea from '@/features/system-admin/ui/components/MappingManagementArea.vue'
+import ApiKeyManagementArea from '@/features/system-admin/ui/components/ApiKeyManagementArea.vue'
 import WorkClassificationArea from '@/features/system-admin/ui/components/standard/WorkClassificationArea.vue'
 import WorkStepArea from '@/features/system-admin/ui/components/standard/WorkStepArea.vue'
 import ComponentTypeArea from '@/features/system-admin/ui/components/standard/ComponentTypeArea.vue'
@@ -28,13 +29,14 @@ import LaborTypeArea from '@/features/system-admin/ui/components/standard/LaborT
 const router = useRouter()
 const authStore = useAuthStore()
 
-type MenuId = 'project' | 'company' | 'common' | 'standard'
+type MenuId = 'project' | 'company' | 'common' | 'standard' | 'apiKey'
 
 const menus: { id: MenuId; label: string }[] = [
   { id: 'project', label: '프로젝트관리' },
   { id: 'company', label: '사용자/회사관리' },
   { id: 'common', label: '공용 설정' },
   { id: 'standard', label: '표준 데이터' },
+  { id: 'apiKey', label: 'API 키' },
 ]
 
 const MENU_STORAGE_KEY = 'systemAdmin:activeMenu'
@@ -161,6 +163,17 @@ onUnmounted(() => {
               </CardHeader>
               <CardContent>
                 <RoleManagementArea />
+              </CardContent>
+            </Card>
+          </template>
+
+          <template v-if="activeMenu === 'apiKey'">
+            <Card>
+              <CardHeader>
+                <CardTitle>API 키 관리 (AI 에이전트용)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ApiKeyManagementArea />
               </CardContent>
             </Card>
           </template>

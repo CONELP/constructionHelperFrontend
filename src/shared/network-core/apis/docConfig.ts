@@ -1,9 +1,11 @@
 import apiClient from '@/shared/network-core/apiClient'
 
 export type DocConfigDocType = 'MIR' | 'CAT' | 'CCST'
-export type UploadDocType = 'MIR' | 'CAT' | 'CCST' | 'DR'
-export type ExcelCellRefDocType = 'MIR' | 'DR'
-export type ScriptPromptDocType = 'CAT' | 'CCST'
+export type UploadDocType = 'MIR' | 'CAT' | 'DR'
+export type ExcelCellRefDocType = 'DR'
+export type ScriptPromptDocType = 'MIR' | 'CAT' | 'CCST'
+export type TemplateDocType = 'MIR' | 'CAT'
+export type TemplateRefDocType = 'MIR' | 'CAT' | 'CCST'
 
 export interface DocConfigResponse {
   id: number
@@ -11,12 +13,14 @@ export interface DocConfigResponse {
   drTemplateUrl: string | null
   mirTemplateUrl: string | null
   catTemplateUrl: string | null
-  ccstTemplateUrl: string | null
+  mirTemplateRefUrl: string | null
+  catTemplateRefUrl: string | null
+  ccstTemplateRefUrl: string | null
   mirDocNoPrompt: string | null
   catDocNoPrompt: string | null
   ccstDocNoPrompt: string | null
   drExcelCellRef: string | null
-  mirExcelCellRef: string | null
+  mirScriptPrompt: string | null
   catScriptPrompt: string | null
   ccstScriptPrompt: string | null
   createdAt: string
@@ -58,6 +62,35 @@ export const docConfigApi = {
     formData.append('file', file)
     const { data } = await apiClient.post<DocConfigResponse>(
       `/docConfig/uploadTemplate/${projectId}/${docType}`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
+      },
+    )
+    return data
+  },
+
+  async updateTemplateRefUrl(
+    projectId: string,
+    body: { docType: TemplateRefDocType; url: string },
+  ): Promise<DocConfigResponse> {
+    const { data } = await apiClient.put<DocConfigResponse>(
+      `/docConfig/updateTemplateRefUrl/${projectId}`,
+      body,
+    )
+    return data
+  },
+
+  async uploadTemplateRef(
+    projectId: string,
+    docType: TemplateRefDocType,
+    file: File,
+  ): Promise<DocConfigResponse> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post<DocConfigResponse>(
+      `/docConfig/uploadTemplateRef/${projectId}/${docType}`,
       formData,
       {
         headers: { 'Content-Type': 'multipart/form-data' },

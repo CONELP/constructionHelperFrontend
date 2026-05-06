@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import PageContainer from '@/shared/helper-ui/PageContainer.vue'
 import AreaCard from '@/shared/helper-ui/AreaCard.vue'
 import { Button } from '@/shared/ui/button'
@@ -20,7 +21,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog'
-import { Download, Trash2 } from 'lucide-vue-next'
+import { Download, Plus, Trash2 } from 'lucide-vue-next'
+import CcstCreateDialog from '@/features/document/ui/components/CcstCreateDialog.vue'
 import { ccstDocumentApi } from '@/features/document/infra/project-document-code-api'
 import { useDocumentJobListPage } from '@/features/document/view-model/useDocumentJobListPage'
 
@@ -31,6 +33,7 @@ const {
   showDeleteDialog,
   deleteTargetName,
   isDeleting,
+  loadDocumentList,
   openDeleteDialog,
   confirmDelete,
   downloadDocument,
@@ -39,11 +42,30 @@ const {
   loadList: ccstDocumentApi.getCcstDocumentList,
   analyticsScope: 'ccst_document',
 })
+
+const createDialogOpen = ref(false)
+
+function openCreateDialog() {
+  createDialogOpen.value = true
+}
+
+async function onCcstCreated() {
+  await loadDocumentList()
+}
 </script>
 
 <template>
   <PageContainer title="콘크리트압축강도시험">
     <AreaCard>
+      <Button
+        size="lg"
+        class="w-full h-14 mb-4 text-base"
+        @click="openCreateDialog"
+      >
+        <Plus class="h-5 w-5 mr-2" />
+        콘크리트압축강도시험 생성
+      </Button>
+
       <div v-if="isLoading" class="text-sm text-muted-foreground text-center py-8">
         목록 로딩 중...
       </div>
@@ -94,6 +116,11 @@ const {
         </TableBody>
       </Table>
     </AreaCard>
+
+    <CcstCreateDialog
+      v-model:open="createDialogOpen"
+      @created="onCcstCreated"
+    />
 
     <AlertDialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
       <AlertDialogContent>

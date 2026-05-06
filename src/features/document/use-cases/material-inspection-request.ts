@@ -4,18 +4,10 @@ import type {
 import type { DownloadedDocument } from '@/shared/network-core/apis/document'
 
 export interface MaterialInspectionRequestRepository {
-  createMir(materialDeliveryId: number): Promise<MaterialInspectionRequestResponse>
   getMirList(): Promise<MaterialInspectionRequestResponse[]>
   deleteDocument(jobId: number): Promise<void>
   updateMirDocumentNumber(mirId: number, documentNumber: string): Promise<void>
   downloadDocument(jobId: number): Promise<DownloadedDocument>
-}
-
-export const createMir = async (
-  repository: MaterialInspectionRequestRepository,
-  materialDeliveryId: number,
-): Promise<MaterialInspectionRequestResponse> => {
-  return repository.createMir(materialDeliveryId)
 }
 
 export const getMaterialInspectionRequests = async (

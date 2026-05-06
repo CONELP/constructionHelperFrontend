@@ -3,7 +3,6 @@ import { documentApi } from '@/shared/network-core/apis/document'
 import type { MaterialInspectionRequestRepository } from '@/features/document/use-cases/material-inspection-request'
 
 export const materialInspectionRequestRepository: MaterialInspectionRequestRepository = {
-  createMir: (deliveryId) => materialInspectionRequestApi.createMir(deliveryId),
   getMirList: () => materialInspectionRequestApi.getMirList(),
   deleteDocument: (jobId) => documentApi.deleteDocument(jobId),
   updateMirDocumentNumber: (mirId, documentNumber) =>

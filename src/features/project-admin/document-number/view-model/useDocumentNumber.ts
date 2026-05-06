@@ -5,6 +5,8 @@ import {
   type DocConfigResponse,
   type ExcelCellRefDocType,
   type ScriptPromptDocType,
+  type TemplateDocType,
+  type TemplateRefDocType,
 } from '@/shared/network-core/apis/docConfig'
 import { analyticsClient } from '@/shared/analytics/analyticsClient'
 
@@ -13,34 +15,44 @@ type CellRefs = Record<ExcelCellRefDocType, string>
 type CellRefFlags = Record<ExcelCellRefDocType, boolean>
 type ScriptPrompts = Record<ScriptPromptDocType, string>
 type ScriptPromptFlags = Record<ScriptPromptDocType, boolean>
-type TemplateUrls = Record<DocConfigDocType, string | null>
-type TemplateFlags = Record<DocConfigDocType, boolean>
+type TemplateUrls = Record<TemplateDocType, string | null>
+type TemplateFlags = Record<TemplateDocType, boolean>
+type TemplateRefUrls = Record<TemplateRefDocType, string | null>
+type TemplateRefFlags = Record<TemplateRefDocType, boolean>
 
 function emptyPrompts(): Prompts {
   return { MIR: '', CAT: '', CCST: '' }
 }
 
 function emptyCellRefs(): CellRefs {
-  return { MIR: '', DR: '' }
+  return { DR: '' }
 }
 
 function emptyCellRefFlags(): CellRefFlags {
-  return { MIR: false, DR: false }
+  return { DR: false }
 }
 
 function emptyScriptPrompts(): ScriptPrompts {
-  return { CAT: '', CCST: '' }
+  return { MIR: '', CAT: '', CCST: '' }
 }
 
 function emptyScriptPromptFlags(): ScriptPromptFlags {
-  return { CAT: false, CCST: false }
+  return { MIR: false, CAT: false, CCST: false }
 }
 
 function emptyTemplateUrls(): TemplateUrls {
-  return { MIR: null, CAT: null, CCST: null }
+  return { MIR: null, CAT: null }
 }
 
 function emptyTemplateFlags(): TemplateFlags {
+  return { MIR: false, CAT: false }
+}
+
+function emptyTemplateRefUrls(): TemplateRefUrls {
+  return { MIR: null, CAT: null, CCST: null }
+}
+
+function emptyTemplateRefFlags(): TemplateRefFlags {
   return { MIR: false, CAT: false, CCST: false }
 }
 
@@ -64,11 +76,13 @@ export function useDocumentNumber() {
   const isGeneratingCellRef = ref<CellRefFlags>(emptyCellRefFlags())
   const isSavingScriptPrompt = ref<ScriptPromptFlags>(emptyScriptPromptFlags())
   const isUploadingTemplate = ref<TemplateFlags>(emptyTemplateFlags())
+  const isUploadingTemplateRef = ref<TemplateRefFlags>(emptyTemplateRefFlags())
   const exists = ref(false)
   const prompts = ref<Prompts>(emptyPrompts())
   const cellRefs = ref<CellRefs>(emptyCellRefs())
   const scriptPrompts = ref<ScriptPrompts>(emptyScriptPrompts())
   const templateUrls = ref<TemplateUrls>(emptyTemplateUrls())
+  const templateRefUrls = ref<TemplateRefUrls>(emptyTemplateRefUrls())
 
   function applyResponse(res: DocConfigResponse) {
     prompts.value = {
@@ -77,17 +91,21 @@ export function useDocumentNumber() {
       CCST: res.ccstDocNoPrompt ?? '',
     }
     cellRefs.value = {
-      MIR: prettify(res.mirExcelCellRef),
       DR: prettify(res.drExcelCellRef),
     }
     scriptPrompts.value = {
+      MIR: res.mirScriptPrompt ?? '',
       CAT: res.catScriptPrompt ?? '',
       CCST: res.ccstScriptPrompt ?? '',
     }
     templateUrls.value = {
       MIR: res.mirTemplateUrl,
       CAT: res.catTemplateUrl,
-      CCST: res.ccstTemplateUrl,
+    }
+    templateRefUrls.value = {
+      MIR: res.mirTemplateRefUrl,
+      CAT: res.catTemplateRefUrl,
+      CCST: res.ccstTemplateRefUrl,
     }
   }
 
@@ -105,6 +123,7 @@ export function useDocumentNumber() {
         cellRefs.value = emptyCellRefs()
         scriptPrompts.value = emptyScriptPrompts()
         templateUrls.value = emptyTemplateUrls()
+        templateRefUrls.value = emptyTemplateRefUrls()
       } else {
         console.error('문서번호 설정 로드 실패:', error)
         alert(err.response?.data?.message || err.message)
@@ -218,7 +237,7 @@ export function useDocumentNumber() {
     }
   }
 
-  async function uploadTemplate(projectId: string, docType: DocConfigDocType, file: File) {
+  async function uploadTemplate(projectId: string, docType: TemplateDocType, file: File) {
     isUploadingTemplate.value[docType] = true
     try {
       await ensureExists(projectId)
@@ -236,6 +255,36 @@ export function useDocumentNumber() {
     }
   }
 
+  async function uploadTemplateRef(
+    projectId: string,
+    docType: TemplateRefDocType,
+    file: File,
+  ) {
+    isUploadingTemplateRef.value[docType] = true
+    try {
+      await ensureExists(projectId)
+      const res = await docConfigApi.uploadTemplateRef(projectId, docType, file)
+      applyResponse(res)
+      analyticsClient.trackAction(
+        'admin_document_number',
+        `upload_${docType.toLowerCase()}_template_ref`,
+        'success',
+      )
+      alert('참조용 템플릿이 업로드되었습니다.')
+    } catch (error: unknown) {
+      console.error('참조용 템플릿 업로드 실패:', error)
+      analyticsClient.trackAction(
+        'admin_document_number',
+        `upload_${docType.toLowerCase()}_template_ref`,
+        'fail',
+      )
+      const err = error as { response?: { data?: { message?: string } }; message?: string }
+      alert(err.response?.data?.message || err.message)
+    } finally {
+      isUploadingTemplateRef.value[docType] = false
+    }
+  }
+
   return {
     isLoading,
     isSaving,
@@ -243,16 +292,19 @@ export function useDocumentNumber() {
     isGeneratingCellRef,
     isSavingScriptPrompt,
     isUploadingTemplate,
+    isUploadingTemplateRef,
     exists,
     prompts,
     cellRefs,
     scriptPrompts,
     templateUrls,
+    templateRefUrls,
     load,
     save,
     saveCellRef,
     generateCellRef,
     saveScriptPrompt,
     uploadTemplate,
+    uploadTemplateRef,
   }
 }
